@@ -240,17 +240,18 @@ export default function ApostarScreen() {
 
         <Text style={styles.sectionTitle}>Palpite de placar exato ⓘ</Text>
 
-        <View style={styles.scoreArea}>
+        {/* NOVA ÁREA DE PLACAR FORMATADA IGUAL AO PRINT */}
+        <View style={styles.scoreAreaWrapper}>
+          
           <View style={styles.scoreColumn}>
-            <Text style={styles.scoreTeam}>BRASIL</Text>
-
+            <Text style={[styles.scoreTeam, { color: "#1B4D3E" }]}>BRASIL</Text>
             <View style={styles.scoreBox}>
               <TouchableOpacity
                 style={styles.arrowButton}
                 onPress={aumentarBrasil}
                 disabled={apostaBloqueada}
               >
-                <Text style={[styles.arrow, apostaBloqueada && styles.disabledText]}>
+                <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
                   ˄
                 </Text>
               </TouchableOpacity>
@@ -262,25 +263,26 @@ export default function ApostarScreen() {
                 onPress={diminuirBrasil}
                 disabled={apostaBloqueada}
               >
-                <Text style={[styles.arrow, apostaBloqueada && styles.disabledText]}>
+                <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
                   ˅
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          <Text style={styles.scoreX}>X</Text>
+          <View style={styles.scoreXContainer}>
+            <Text style={styles.scoreX}>x</Text>
+          </View>
 
           <View style={styles.scoreColumn}>
-            <Text style={styles.scoreTeam}>ARGENTINA</Text>
-
+            <Text style={[styles.scoreTeam, { color: "#111827" }]}>ARGENTINA</Text>
             <View style={styles.scoreBox}>
               <TouchableOpacity
                 style={styles.arrowButton}
                 onPress={aumentarAdversario}
                 disabled={apostaBloqueada}
               >
-                <Text style={[styles.arrow, apostaBloqueada && styles.disabledText]}>
+                <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
                   ˄
                 </Text>
               </TouchableOpacity>
@@ -292,12 +294,13 @@ export default function ApostarScreen() {
                 onPress={diminuirAdversario}
                 disabled={apostaBloqueada}
               >
-                <Text style={[styles.arrow, apostaBloqueada && styles.disabledText]}>
+                <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
                   ˅
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
+
         </View>
 
         {jaApostou && (
@@ -433,13 +436,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  arrowButton: {
-    width: 60,
-    height: 45,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   helpCircle: {
     width: 28,
     height: 28,
@@ -511,18 +507,15 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 14,
     fontWeight: "900",
-    marginBottom: 10,
+    marginBottom: 16, // Espaçamento maior
   },
 
-  scoreArea: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+  // ESTILOS DA NOVA ÁREA DE PLACAR
+  scoreAreaWrapper: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
+    marginBottom: 24,
   },
 
   scoreColumn: {
@@ -530,48 +523,60 @@ const styles = StyleSheet.create({
   },
 
   scoreTeam: {
-    color: "#006B2E",
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "900",
-    marginBottom: 6,
+    marginBottom: 10,
+    letterSpacing: 0.5,
   },
 
   scoreBox: {
-    width: 86,
-    height: 125,
-    borderRadius: 15,
+    width: 100,
+    height: 155,
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
+    borderWidth: 4,
+    borderColor: "#F4F5F7", // Borda cinza super clara como no print
     alignItems: "center",
-    justifyContent: "space-around",
-    elevation: 2,
+    justifyContent: "space-between",
+    paddingVertical: 14,
   },
 
-  arrow: {
-    color: "#111827",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-
-  disabledText: {
-    color: "#9CA3AF",
-  },
-
-  scoreNumber: {
-    color: "#111827",
-    fontSize: 42,
-    fontWeight: "900",
+  scoreXContainer: {
+    marginHorizontal: 22,
+    paddingTop: 24, // Desce o "X" compensando a altura do texto do time, para centralizar com a caixa
   },
 
   scoreX: {
     color: "#111827",
-    fontSize: 26,
+    fontSize: 32,
     fontWeight: "900",
-    marginHorizontal: 26,
-    marginTop: 18,
   },
 
+  arrowButton: {
+    width: 70,
+    height: 35,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  arrowIcon: {
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
+  disabledText: {
+    color: "#D1D5DB",
+  },
+
+  scoreNumber: {
+    color: "#111827",
+    fontSize: 54,
+    fontWeight: "900",
+    includeFontPadding: false,
+  },
+
+  // O RESTANTE DOS ESTILOS
   apostaSalvaBox: {
     backgroundColor: "#E7FBEF",
     borderRadius: 14,
