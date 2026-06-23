@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { router } from "expo-router";
 import {
   View,
@@ -11,9 +11,169 @@ import {
   Alert,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
+import { db } from "../../services/firebaseConfig";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+
+type PerfilStats = {
+  totalPalpites: number;
+  totalAcertos: number;
+  totalPontos: number;
+  melhorPalpite: string;
+  melhorPosicao: string;
+};
 
 export default function PerfilScreen() {
   const { user, logout } = useAuth();
+
+  const [stats, setStats] = useState<PerfilStats>({
+    totalPalpites: 0,
+    totalAcertos: 0,
+    totalPontos: 0,
+    melhorPalpite: "Nenhum palpite ainda",
+    melhorPosicao: "Aguardando resultado",
+  });
+
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const emailLower = user.email.toLowerCase();
+
+    const apostasRef = collection(db, "apostas");
+    const qApostas = query(apostasRef, where("emailLower", "==", emailLower));
+
+    let totalPalpitesAtual = 0;
+    let ultimoPalpite = "";
+
+    const unsubscribeApostas = onSnapshot(
+      qApostas,
+      (snapshot) => {
+        totalPalpitesAtual = snapshot.size;
+
+        if (!snapshot.empty) {
+          const apostas = snapshot.docs.map((docItem) => docItem.data());
+
+          apostas.sort((a: any, b: any) => {
+            const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
+            const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+            return dataB - dataA;
+          });
+
+          ultimoPalpite = apostas[0]?.placar
+            ? `Brasil ${apostas[0].placar} Argentina`
+            : "Nenhum palpite ainda";
+        } else {
+          ultimoPalpite = "Nenhum palpite ainda";
+        }
+
+        atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
+      },
+      (error) => {
+        console.log("Erro ao carregar palpites do perfil:", error);
+      }
+    );
+
+    const resultadosRef = collection(db, "resultados");
+
+    const unsubscribeResultados = onSnapshot(
+      resultadosRef,
+      () => {
+        atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
+      },
+      (error) => {
+        console.log("Erro ao carregar resultados do perfil:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeApostas();
+      unsubscribeResultados();
+    };
+  }, [user]);
+
+  async function atualizarStatsComResultados(
+    totalPalpitesAtual: number,
+    ultimoPalpite: string
+  ) {
+    if (!user?.email) return;
+
+    const emailLower = user.email.toLowerCase();
+
+    const resultadosRef = collection(db, "resultados");
+
+    const unsubscribe = onSnapshot(resultadosRef, (snapshot) => {
+      let totalPontos = 0;
+      let totalAcertos = 0;
+      let melhorPalpite = ultimoPalpite || "Nenhum palpite ainda";
+      let melhorPosicaoNumero: number | null = null;
+      let melhorPontuacao = -1;
+
+      snapshot.docs.forEach((docItem) => {
+        const data = docItem.data();
+        const ranking = Array.isArray(data.ranking) ? data.ranking : [];
+
+        const posicaoUsuario = ranking.findIndex((item: any) => {
+          const emailItem = item.emailLower || item.email?.toLowerCase();
+          return emailItem === emailLower;
+        });
+
+        if (posicaoUsuario >= 0) {
+          const item = ranking[posicaoUsuario];
+
+          const pontos = Number(item.pontos || 0);
+
+          totalPontos += pontos;
+
+          if (pontos > 0) {
+            totalAcertos += 1;
+          }
+
+          const posicaoAtual = posicaoUsuario + 1;
+
+          if (
+            melhorPosicaoNumero === null ||
+            posicaoAtual < melhorPosicaoNumero
+          ) {
+            melhorPosicaoNumero = posicaoAtual;
+          }
+
+          if (pontos > melhorPontuacao) {
+            melhorPontuacao = pontos;
+            melhorPalpite = item.placar
+              ? `Brasil ${item.placar} Argentina`
+              : melhorPalpite;
+          }
+        }
+      });
+
+      setStats({
+        totalPalpites: totalPalpitesAtual,
+        totalAcertos,
+        totalPontos,
+        melhorPalpite:
+          melhorPontuacao >= 0 ? melhorPalpite : ultimoPalpite,
+        melhorPosicao:
+          melhorPosicaoNumero !== null
+            ? `${melhorPosicaoNumero}º lugar no ranking`
+            : "Aguardando resultado",
+      });
+
+      unsubscribe();
+    });
+  }
+
+  function pegarMillis(data?: any) {
+    if (!data) return 0;
+
+    if (typeof data.toMillis === "function") {
+      return data.toMillis();
+    }
+
+    if (data.seconds) {
+      return data.seconds * 1000;
+    }
+
+    return new Date(data).getTime();
+  }
 
   function abrirConfig() {
     Alert.alert(
@@ -73,17 +233,17 @@ export default function PerfilScreen() {
 
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>12</Text>
+            <Text style={styles.statNumber}>{stats.totalPalpites}</Text>
             <Text style={styles.statLabel}>palpites</Text>
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>4</Text>
+            <Text style={styles.statNumber}>{stats.totalAcertos}</Text>
             <Text style={styles.statLabel}>acertos</Text>
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>230</Text>
+            <Text style={styles.statNumber}>{stats.totalPontos}</Text>
             <Text style={styles.statLabel}>pontos</Text>
           </View>
         </View>
@@ -93,7 +253,7 @@ export default function PerfilScreen() {
             <Text style={styles.balanceLabel}>Saldo fictício</Text>
             <Text style={styles.balanceValue}>{user?.saldo || 0} BRL</Text>
             <Text style={styles.balanceInfo}>
-              Saldo vinculado ao login atual.
+              Saldo atualizado online pelo Firebase.
             </Text>
           </View>
 
@@ -123,7 +283,7 @@ export default function PerfilScreen() {
             <Text style={styles.performanceIcon}>🎯</Text>
             <View style={styles.performanceInfo}>
               <Text style={styles.performanceTitle}>Melhor palpite</Text>
-              <Text style={styles.performanceText}>Brasil 2 x 1 Argentina</Text>
+              <Text style={styles.performanceText}>{stats.melhorPalpite}</Text>
             </View>
           </View>
 
@@ -131,7 +291,7 @@ export default function PerfilScreen() {
             <Text style={styles.performanceIcon}>🏆</Text>
             <View style={styles.performanceInfo}>
               <Text style={styles.performanceTitle}>Melhor posição</Text>
-              <Text style={styles.performanceText}>2º lugar no ranking</Text>
+              <Text style={styles.performanceText}>{stats.melhorPosicao}</Text>
             </View>
           </View>
 
@@ -139,7 +299,7 @@ export default function PerfilScreen() {
             <Text style={styles.performanceIcon}>👥</Text>
             <View style={styles.performanceInfo}>
               <Text style={styles.performanceTitle}>Grupo atual</Text>
-              <Text style={styles.performanceText}>Família e Amigos</Text>
+              <Text style={styles.performanceText}>Bolão Brasil x Argentina</Text>
             </View>
           </View>
         </View>
@@ -147,12 +307,15 @@ export default function PerfilScreen() {
         <Text style={styles.sectionTitle}>Minha conta</Text>
 
         <View style={styles.menuBox}>
-          <TouchableOpacity style={styles.menuOption}>
+          <TouchableOpacity
+            style={styles.menuOption}
+            onPress={() => router.push("/(tabs)/bolao")}
+          >
             <Text style={styles.menuOptionIcon}>🎯</Text>
             <View style={styles.menuOptionTextBox}>
               <Text style={styles.menuOptionTitle}>Meus palpites</Text>
               <Text style={styles.menuOptionSubtitle}>
-                Ver todos os palpites feitos
+                Ver palpites feitos no bolão
               </Text>
             </View>
             <Text style={styles.arrow}>›</Text>
@@ -163,13 +326,16 @@ export default function PerfilScreen() {
             <View style={styles.menuOptionTextBox}>
               <Text style={styles.menuOptionTitle}>Meus grupos</Text>
               <Text style={styles.menuOptionSubtitle}>
-                Família, amigos e bolões
+                Bolão Brasil x Argentina
               </Text>
             </View>
             <Text style={styles.arrow}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuOption}>
+          <TouchableOpacity
+            style={styles.menuOption}
+            onPress={() => router.push("/(tabs)")}
+          >
             <Text style={styles.menuOptionIcon}>🔔</Text>
             <View style={styles.menuOptionTextBox}>
               <Text style={styles.menuOptionTitle}>Notificações</Text>
