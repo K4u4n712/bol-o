@@ -810,9 +810,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#00A344",
     marginTop: 3,
-    fontWeight: "600",
+    fontWeight: "300",
   },
 });
-
-
 
