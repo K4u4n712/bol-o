@@ -17,6 +17,7 @@ import {
   SafeAreaView,
   StatusBar,
   Animated,
+  Image,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -229,14 +230,22 @@ export default function HomeScreen() {
 
           <View style={styles.teamsRow}>
             <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-              <Text style={styles.flag}>🇧🇷</Text>
+              {/* BANDEIRA BRASIL CIRCULAR */}
+              <Image 
+                source={{ uri: "https://flagcdn.com/w320/br.png" }} 
+                style={styles.flagImage} 
+              />
               <Text style={styles.teamName}>BRASIL</Text>
             </TouchableOpacity>
 
             <Text style={styles.vs}>X</Text>
 
             <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-              <Text style={styles.flag}>🇦🇷</Text>
+              {/* BANDEIRA ARGENTINA CIRCULAR */}
+              <Image 
+                source={{ uri: "https://flagcdn.com/w320/ar.png" }} 
+                style={styles.flagImage} 
+              />
               <Text style={styles.teamName}>ARGENTINA</Text>
             </TouchableOpacity>
           </View>
@@ -606,12 +615,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  flag: {
-    fontSize: 54,
+  /* NOVO ESTILO DA BANDEIRA CIRCULAR */
+  flagImage: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    resizeMode: "cover",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
 
   teamName: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 12,
     fontWeight: "900",
     color: "#111827",
@@ -810,7 +825,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#00A344",
     marginTop: 3,
-    fontWeight: "900",
+    fontWeight: "300",
   },
 });
-
