@@ -825,6 +825,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#00A344",
     marginTop: 3,
-    fontWeight: "300",
+    fontWeight: "900",
   },
 });

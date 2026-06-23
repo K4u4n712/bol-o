@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
 import {
   View,
@@ -16,12 +16,21 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  // ADICIONADO: Puxando o 'user' do contexto para verificar se já está logado
+  const { login, register, user } = useAuth();
 
   const [modoCadastro, setModoCadastro] = useState(false);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+
+  // NOVO: Efeito que roda assim que a tela abre. 
+  // Se já existir um usuário logado (salvo no celular), ele pula pro app direto.
+  useEffect(() => {
+    if (user) {
+      router.replace("/(tabs)");
+    }
+  }, [user]);
 
   async function entrar() {
     try {
