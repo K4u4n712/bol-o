@@ -18,6 +18,8 @@ import {
   StatusBar,
   Animated,
   Image,
+  Modal,
+  Pressable,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -169,53 +171,6 @@ export default function HomeScreen() {
             <Text style={styles.welcomeText}>Que comece o bolão!</Text>
           </View>
 
-          {mostrarNotificacao && (
-            <View style={styles.notificationCard}>
-              <View style={styles.notificationHeader}>
-                <Text style={styles.notificationTitle}>🔔 Notificações</Text>
-
-                <TouchableOpacity onPress={fecharNotificacao}>
-                  <Text style={styles.notificationClose}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              {!notificacao ? (
-                <View style={styles.emptyNotification}>
-                  <Text style={styles.emptyNotificationText}>
-                    Nenhuma notificação no momento.
-                  </Text>
-                </View>
-              ) : (
-                <View
-                  style={[
-                    styles.notificationContent,
-                    notificacao.venceu
-                      ? styles.notificationWin
-                      : styles.notificationLose,
-                  ]}
-                >
-                  <Text style={styles.notificationGame}>
-                    🏆 Resultado do Bolão
-                  </Text>
-
-                  <Text style={styles.notificationMessage}>
-                    {notificacao.mensagem}
-                  </Text>
-
-                  {notificacao.venceu && (
-                    <Text style={styles.notificationPrize}>
-                      💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}
-                    </Text>
-                  )}
-
-                  <Text style={styles.notificationHint}>
-                    Toque no ✕ para fechar.
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
           <View style={styles.heroDecorOne} />
           <View style={styles.heroDecorTwo} />
           <View style={styles.heroDecorThree} />
@@ -346,6 +301,62 @@ export default function HomeScreen() {
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
       </View>
+
+      {/* MODAL DE NOTIFICAÇÃO ADICIONADO AQUI */}
+      <Modal
+        visible={mostrarNotificacao}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={fecharNotificacao}
+      >
+        <Pressable style={styles.modalOverlay} onPress={fecharNotificacao}>
+          <Pressable style={styles.modalContent}>
+            <View style={styles.notificationHeader}>
+              <Text style={styles.notificationTitle}>🔔 Notificações</Text>
+
+              <TouchableOpacity onPress={fecharNotificacao}>
+                <Text style={styles.notificationClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {!notificacao ? (
+              <View style={styles.emptyNotification}>
+                <Text style={styles.emptyNotificationText}>
+                  Nenhuma notificação no momento.
+                </Text>
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.notificationContent,
+                  notificacao.venceu
+                    ? styles.notificationWin
+                    : styles.notificationLose,
+                ]}
+              >
+                <Text style={styles.notificationGame}>
+                  🏆 Resultado do Bolão
+                </Text>
+
+                <Text style={styles.notificationMessage}>
+                  {notificacao.mensagem}
+                </Text>
+
+                {notificacao.venceu && (
+                  <Text style={styles.notificationPrize}>
+                    💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}
+                  </Text>
+                )}
+
+                <Text style={styles.notificationHint}>
+                  Toque fora do card ou no ✕ para fechar.
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -457,17 +468,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     marginTop: 3,
-  },
-
-  notificationCard: {
-    backgroundColor: "#FFFFFF",
-    marginTop: 16,
-    borderRadius: 18,
-    padding: 16,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    zIndex: 10,
   },
 
   notificationHeader: {
@@ -615,7 +615,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  /* NOVO ESTILO DA BANDEIRA CIRCULAR */
   flagImage: {
     width: 66,
     height: 66,
@@ -826,5 +825,24 @@ const styles = StyleSheet.create({
     color: "#00A344",
     marginTop: 3,
     fontWeight: "900",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  modalContent: {
+    width: "85%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 20,
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
   },
 });
