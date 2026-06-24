@@ -17,7 +17,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { db } from "../../services/firebaseConfig";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 
-const CHECKOUT_INFINITEPAY_URL = "COLE_AQUI_SEU_LINK_CHECKOUT_INFINITEPAY";
+const CHECKOUT_INFINITEPAY_URL = "https://checkout.infinitepay.io/pitstoplanchepizzariaa/IAwmKpIHgH";
 
 type PerfilStats = {
   totalPalpites: number;
