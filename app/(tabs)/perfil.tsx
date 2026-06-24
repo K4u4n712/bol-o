@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import { router } from "expo-router";
 import {
   View,
@@ -8,11 +9,15 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
-  Alert,
+  Modal,
+  TextInput,
+  Linking,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "../../services/firebaseConfig";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
+
+const CHECKOUT_INFINITEPAY_URL = "COLE_AQUI_SEU_LINK_CHECKOUT_INFINITEPAY";
 
 type PerfilStats = {
   totalPalpites: number;
@@ -24,6 +29,9 @@ type PerfilStats = {
 
 export default function PerfilScreen() {
   const { user, logout } = useAuth();
+
+  const [modalDeposito, setModalDeposito] = useState(false);
+  const [valorDeposito, setValorDeposito] = useState("10");
 
   const [stats, setStats] = useState<PerfilStats>({
     totalPalpites: 0,
@@ -37,52 +45,39 @@ export default function PerfilScreen() {
     if (!user?.email) return;
 
     const emailLower = user.email.toLowerCase();
-
     const apostasRef = collection(db, "apostas");
     const qApostas = query(apostasRef, where("emailLower", "==", emailLower));
 
     let totalPalpitesAtual = 0;
     let ultimoPalpite = "";
 
-    const unsubscribeApostas = onSnapshot(
-      qApostas,
-      (snapshot) => {
-        totalPalpitesAtual = snapshot.size;
+    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
+      totalPalpitesAtual = snapshot.size;
 
-        if (!snapshot.empty) {
-          const apostas = snapshot.docs.map((docItem) => docItem.data());
+      if (!snapshot.empty) {
+        const apostas = snapshot.docs.map((docItem) => docItem.data());
 
-          apostas.sort((a: any, b: any) => {
-            const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
-            const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
-            return dataB - dataA;
-          });
+        apostas.sort((a: any, b: any) => {
+          const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
+          const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+          return dataB - dataA;
+        });
 
-          ultimoPalpite = apostas[0]?.placar
-            ? `Brasil ${apostas[0].placar} Argentina`
-            : "Nenhum palpite ainda";
-        } else {
-          ultimoPalpite = "Nenhum palpite ainda";
-        }
-
-        atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
-      },
-      (error) => {
-        console.log("Erro ao carregar palpites do perfil:", error);
+        ultimoPalpite = apostas[0]?.placar
+          ? `Brasil ${apostas[0].placar} Argentina`
+          : "Nenhum palpite ainda";
+      } else {
+        ultimoPalpite = "Nenhum palpite ainda";
       }
-    );
+
+      atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
+    });
 
     const resultadosRef = collection(db, "resultados");
 
-    const unsubscribeResultados = onSnapshot(
-      resultadosRef,
-      () => {
-        atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
-      },
-      (error) => {
-        console.log("Erro ao carregar resultados do perfil:", error);
-      }
-    );
+    const unsubscribeResultados = onSnapshot(resultadosRef, () => {
+      atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
+    });
 
     return () => {
       unsubscribeApostas();
@@ -97,7 +92,6 @@ export default function PerfilScreen() {
     if (!user?.email) return;
 
     const emailLower = user.email.toLowerCase();
-
     const resultadosRef = collection(db, "resultados");
 
     const unsubscribe = onSnapshot(resultadosRef, (snapshot) => {
@@ -118,14 +112,11 @@ export default function PerfilScreen() {
 
         if (posicaoUsuario >= 0) {
           const item = ranking[posicaoUsuario];
-
           const pontos = Number(item.pontos || 0);
 
           totalPontos += pontos;
 
-          if (pontos > 0) {
-            totalAcertos += 1;
-          }
+          if (pontos > 0) totalAcertos += 1;
 
           const posicaoAtual = posicaoUsuario + 1;
 
@@ -149,8 +140,7 @@ export default function PerfilScreen() {
         totalPalpites: totalPalpitesAtual,
         totalAcertos,
         totalPontos,
-        melhorPalpite:
-          melhorPontuacao >= 0 ? melhorPalpite : ultimoPalpite,
+        melhorPalpite: melhorPontuacao >= 0 ? melhorPalpite : ultimoPalpite,
         melhorPosicao:
           melhorPosicaoNumero !== null
             ? `${melhorPosicaoNumero}º lugar no ranking`
@@ -163,23 +153,41 @@ export default function PerfilScreen() {
 
   function pegarMillis(data?: any) {
     if (!data) return 0;
-
-    if (typeof data.toMillis === "function") {
-      return data.toMillis();
-    }
-
-    if (data.seconds) {
-      return data.seconds * 1000;
-    }
-
+    if (typeof data.toMillis === "function") return data.toMillis();
+    if (data.seconds) return data.seconds * 1000;
     return new Date(data).getTime();
   }
 
   function abrirConfig() {
-    Alert.alert(
+    mostrarAlerta(
       "Configurações",
       "Aqui depois podemos colocar edição de nome, foto, senha, grupos e notificações."
     );
+  }
+
+  async function abrirCheckoutDeposito() {
+    const valor = Number(valorDeposito.replace(",", "."));
+
+    if (!valor || valor < 1) {
+      mostrarAlerta("Valor inválido", "Digite um valor válido para depositar.");
+      return;
+    }
+
+    if (CHECKOUT_INFINITEPAY_URL.includes("COLE_AQUI")) {
+      mostrarAlerta(
+        "Link não configurado",
+        "Cole o link do checkout da InfinitePay no código."
+      );
+      return;
+    }
+
+    setModalDeposito(false);
+
+    const abriu = await Linking.openURL(CHECKOUT_INFINITEPAY_URL);
+
+    if (!abriu) {
+      mostrarAlerta("Erro", "Não foi possível abrir o checkout.");
+    }
   }
 
   async function sairConta() {
@@ -187,7 +195,7 @@ export default function PerfilScreen() {
       await logout();
       router.replace("/login");
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível sair da conta.");
+      mostrarAlerta("Erro", "Não foi possível sair da conta.");
     }
   }
 
@@ -196,7 +204,7 @@ export default function PerfilScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)")}>
+        <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
@@ -250,7 +258,7 @@ export default function PerfilScreen() {
 
         <View style={styles.balanceCard}>
           <View>
-            <Text style={styles.balanceLabel}>Saldo fictício</Text>
+            <Text style={styles.balanceLabel}>Saldo</Text>
             <Text style={styles.balanceValue}>{user?.saldo || 0} BRL</Text>
             <Text style={styles.balanceInfo}>
               Saldo atualizado online pelo Firebase.
@@ -260,6 +268,13 @@ export default function PerfilScreen() {
           <Text style={styles.coinIcon}>🪙</Text>
         </View>
 
+        <TouchableOpacity
+          style={styles.depositButton}
+          onPress={() => setModalDeposito(true)}
+        >
+          <Text style={styles.depositText}>Depositar via Pix</Text>
+        </TouchableOpacity>
+
         {user?.role === "admin" && (
           <TouchableOpacity
             style={styles.adminCard}
@@ -268,7 +283,7 @@ export default function PerfilScreen() {
             <View>
               <Text style={styles.adminTitle}>Painel administrador</Text>
               <Text style={styles.adminText}>
-                Gerenciar usuários e definir saldos fictícios.
+                Gerenciar usuários e definir saldos.
               </Text>
             </View>
 
@@ -299,7 +314,9 @@ export default function PerfilScreen() {
             <Text style={styles.performanceIcon}>👥</Text>
             <View style={styles.performanceInfo}>
               <Text style={styles.performanceTitle}>Grupo atual</Text>
-              <Text style={styles.performanceText}>Bolão Brasil x Argentina</Text>
+              <Text style={styles.performanceText}>
+                Bolão Brasil x Argentina
+              </Text>
             </View>
           </View>
         </View>
@@ -309,7 +326,7 @@ export default function PerfilScreen() {
         <View style={styles.menuBox}>
           <TouchableOpacity
             style={styles.menuOption}
-            onPress={() => router.push("/(tabs)/bolao")}
+            onPress={() => router.push("/bolao")}
           >
             <Text style={styles.menuOptionIcon}>🎯</Text>
             <View style={styles.menuOptionTextBox}>
@@ -334,7 +351,7 @@ export default function PerfilScreen() {
 
           <TouchableOpacity
             style={styles.menuOption}
-            onPress={() => router.push("/(tabs)")}
+            onPress={() => router.push("/")}
           >
             <Text style={styles.menuOptionIcon}>🔔</Text>
             <View style={styles.menuOptionTextBox}>
@@ -383,26 +400,56 @@ export default function PerfilScreen() {
         <View style={styles.warningCard}>
           <Text style={styles.warningTitle}>Aviso importante</Text>
           <Text style={styles.warningText}>
-            Este app usa apenas dinheiro fictício. Não envolve pagamento real,
-            saque real ou aposta com dinheiro verdadeiro.
+            Depósitos reais podem envolver regras legais. Use apenas se estiver
+            tudo regularizado.
           </Text>
         </View>
 
         <View style={styles.bottomSpace} />
       </ScrollView>
 
+      <Modal visible={modalDeposito} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Depositar saldo</Text>
+            <Text style={styles.modalSubtitle}>
+              Digite o valor e continue para o checkout Pix.
+            </Text>
+
+            <TextInput
+              style={styles.inputValor}
+              value={valorDeposito}
+              onChangeText={setValorDeposito}
+              keyboardType="numeric"
+              placeholder="Ex: 10"
+            />
+
+            <TouchableOpacity
+              style={styles.modalDepositButton}
+              onPress={abrirCheckoutDeposito}
+            >
+              <Text style={styles.modalDepositText}>Continuar para Pix</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setModalDeposito(false)}
+            >
+              <Text style={styles.cancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.bottomMenu}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/(tabs)")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/apostar")}
+          onPress={() => router.push("/apostar")}
         >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
@@ -410,7 +457,7 @@ export default function PerfilScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/bolao")}
+          onPress={() => router.push("/bolao")}
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
@@ -418,7 +465,7 @@ export default function PerfilScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/ranking")}
+          onPress={() => router.push("/ranking")}
         >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
@@ -434,10 +481,7 @@ export default function PerfilScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F3F6F4",
-  },
+  safe: { flex: 1, backgroundColor: "#F3F6F4" },
 
   header: {
     backgroundColor: "#006B2E",
@@ -451,17 +495,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 28,
   },
 
-  back: {
-    color: "#FFFFFF",
-    fontSize: 34,
-    fontWeight: "900",
-  },
-
-  headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "900",
-  },
+  back: { color: "#FFFFFF", fontSize: 34, fontWeight: "900" },
+  headerTitle: { color: "#FFFFFF", fontSize: 22, fontWeight: "900" },
 
   configCircle: {
     width: 38,
@@ -472,13 +507,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  configText: {
-    fontSize: 19,
-  },
-
-  scroll: {
-    flex: 1,
-  },
+  configText: { fontSize: 19 },
+  scroll: { flex: 1 },
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -492,10 +522,6 @@ const styles = StyleSheet.create({
     padding: 26,
     alignItems: "center",
     elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
   },
 
   avatar: {
@@ -507,25 +533,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 42,
-    fontWeight: "900",
-  },
-
-  name: {
-    color: "#111827",
-    fontSize: 27,
-    fontWeight: "900",
-    marginTop: 12,
-  },
-
-  userTag: {
-    color: "#6B7280",
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 3,
-  },
+  avatarText: { color: "#FFFFFF", fontSize: 42, fontWeight: "900" },
+  name: { color: "#111827", fontSize: 27, fontWeight: "900", marginTop: 12 },
+  userTag: { color: "#6B7280", fontSize: 14, fontWeight: "700", marginTop: 3 },
 
   levelBadge: {
     backgroundColor: "#FFF6BF",
@@ -535,16 +545,9 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
 
-  levelText: {
-    color: "#0B3D1C",
-    fontWeight: "900",
-    fontSize: 13,
-  },
+  levelText: { color: "#0B3D1C", fontWeight: "900", fontSize: 13 },
 
-  statsRow: {
-    flexDirection: "row",
-    marginTop: 18,
-  },
+  statsRow: { flexDirection: "row", marginTop: 18 },
 
   statCard: {
     flex: 1,
@@ -556,18 +559,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  statNumber: {
-    color: "#006B2E",
-    fontSize: 27,
-    fontWeight: "900",
-  },
-
-  statLabel: {
-    color: "#6B7280",
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 3,
-  },
+  statNumber: { color: "#006B2E", fontSize: 27, fontWeight: "900" },
+  statLabel: { color: "#6B7280", fontSize: 12, fontWeight: "700", marginTop: 3 },
 
   balanceCard: {
     backgroundColor: "#005C28",
@@ -579,18 +572,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  balanceLabel: {
-    color: "#DFFFEA",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  balanceValue: {
-    color: "#FFD500",
-    fontSize: 32,
-    fontWeight: "900",
-    marginTop: 4,
-  },
+  balanceLabel: { color: "#DFFFEA", fontSize: 14, fontWeight: "700" },
+  balanceValue: { color: "#FFD500", fontSize: 32, fontWeight: "900", marginTop: 4 },
 
   balanceInfo: {
     color: "#DFFFEA",
@@ -600,8 +583,20 @@ const styles = StyleSheet.create({
     maxWidth: 230,
   },
 
-  coinIcon: {
-    fontSize: 42,
+  coinIcon: { fontSize: 42 },
+
+  depositButton: {
+    backgroundColor: "#00A344",
+    borderRadius: 18,
+    padding: 17,
+    alignItems: "center",
+    marginTop: 12,
+  },
+
+  depositText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "900",
   },
 
   adminCard: {
@@ -614,23 +609,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  adminTitle: {
-    color: "#FFFFFF",
-    fontSize: 19,
-    fontWeight: "900",
-  },
-
-  adminText: {
-    color: "#D1D5DB",
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 5,
-    maxWidth: 240,
-  },
-
-  adminIcon: {
-    fontSize: 36,
-  },
+  adminTitle: { color: "#FFFFFF", fontSize: 19, fontWeight: "900" },
+  adminText: { color: "#D1D5DB", fontSize: 13, fontWeight: "600", marginTop: 5 },
+  adminIcon: { fontSize: 36 },
 
   sectionTitle: {
     color: "#111827",
@@ -655,27 +636,10 @@ const styles = StyleSheet.create({
     borderBottomColor: "#EEF2F7",
   },
 
-  performanceIcon: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-
-  performanceInfo: {
-    flex: 1,
-  },
-
-  performanceTitle: {
-    color: "#111827",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
-  performanceText: {
-    color: "#6B7280",
-    fontSize: 13,
-    fontWeight: "700",
-    marginTop: 3,
-  },
+  performanceIcon: { fontSize: 28, marginRight: 12 },
+  performanceInfo: { flex: 1 },
+  performanceTitle: { color: "#111827", fontSize: 15, fontWeight: "900" },
+  performanceText: { color: "#6B7280", fontSize: 13, fontWeight: "700", marginTop: 3 },
 
   menuBox: {
     backgroundColor: "#FFFFFF",
@@ -692,33 +656,11 @@ const styles = StyleSheet.create({
     borderBottomColor: "#EEF2F7",
   },
 
-  menuOptionIcon: {
-    fontSize: 27,
-    marginRight: 12,
-  },
-
-  menuOptionTextBox: {
-    flex: 1,
-  },
-
-  menuOptionTitle: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  menuOptionSubtitle: {
-    color: "#6B7280",
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 3,
-  },
-
-  arrow: {
-    color: "#9CA3AF",
-    fontSize: 30,
-    fontWeight: "700",
-  },
+  menuOptionIcon: { fontSize: 27, marginRight: 12 },
+  menuOptionTextBox: { flex: 1 },
+  menuOptionTitle: { color: "#111827", fontSize: 16, fontWeight: "900" },
+  menuOptionSubtitle: { color: "#6B7280", fontSize: 12, fontWeight: "700", marginTop: 3 },
+  arrow: { color: "#9CA3AF", fontSize: 30, fontWeight: "700" },
 
   logoutButton: {
     backgroundColor: "#FFFFFF",
@@ -730,11 +672,7 @@ const styles = StyleSheet.create({
     borderColor: "#FCA5A5",
   },
 
-  logoutText: {
-    color: "#DC2626",
-    fontSize: 16,
-    fontWeight: "900",
-  },
+  logoutText: { color: "#DC2626", fontSize: 16, fontWeight: "900" },
 
   warningCard: {
     backgroundColor: "#FFF6BF",
@@ -745,22 +683,74 @@ const styles = StyleSheet.create({
     borderColor: "#FFD500",
   },
 
-  warningTitle: {
+  warningTitle: { color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 6 },
+  warningText: { color: "#4B5563", fontSize: 13, fontWeight: "600", lineHeight: 20 },
+  bottomSpace: { height: 20 },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+
+  modalBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 22,
+    width: "100%",
+  },
+
+  modalTitle: {
     color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
+  modalSubtitle: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 6,
+    marginBottom: 16,
+  },
+
+  inputValor: {
+    backgroundColor: "#F3F6F4",
+    borderRadius: 14,
+    padding: 15,
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#111827",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  modalDepositButton: {
+    backgroundColor: "#006B2E",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    marginTop: 14,
+  },
+
+  modalDepositText: {
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "900",
-    marginBottom: 6,
   },
 
-  warningText: {
-    color: "#4B5563",
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 20,
+  cancelButton: {
+    padding: 14,
+    alignItems: "center",
+    marginTop: 6,
   },
 
-  bottomSpace: {
-    height: 20,
+  cancelText: {
+    color: "#DC2626",
+    fontSize: 15,
+    fontWeight: "900",
   },
 
   bottomMenu: {
@@ -778,33 +768,9 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  menuItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  menuItemActive: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  menuIcon: {
-    fontSize: 22,
-  },
-
-  menuText: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 3,
-    fontWeight: "700",
-  },
-
-  menuTextActive: {
-    fontSize: 11,
-    color: "#00A344",
-    marginTop: 3,
-    fontWeight: "900",
-  },
+  menuItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  menuItemActive: { flex: 1, alignItems: "center", justifyContent: "center" },
+  menuIcon: { fontSize: 22 },
+  menuText: { fontSize: 11, color: "#6B7280", marginTop: 3, fontWeight: "700" },
+  menuTextActive: { fontSize: 11, color: "#00A344", marginTop: 3, fontWeight: "900" },
 });

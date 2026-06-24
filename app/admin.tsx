@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { mostrarAlerta, mostrarConfirmacao } from "../utils/mostrarAlerta";
 import { router } from "expo-router";
 import {
   View,
@@ -23,6 +24,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
+  updateDoc,
   writeBatch,
 } from "firebase/firestore";
 
@@ -72,7 +74,7 @@ export default function AdminScreen() {
 
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.replace("/(tabs)")}
+            onPress={() => router.replace("/")}
           >
             <Text style={styles.backButtonText}>Voltar para o app</Text>
           </TouchableOpacity>
@@ -100,14 +102,14 @@ export default function AdminScreen() {
     const valorDigitado = saldosEditados[email];
 
     if (!valorDigitado) {
-      Alert.alert("Atenção", "Digite um valor de saldo.");
+      mostrarAlerta("Atenção", "Digite um valor de saldo.");
       return;
     }
 
     const numero = Number(valorDigitado.replace(",", "."));
 
     if (isNaN(numero) || numero < 0) {
-      Alert.alert("Erro", "Digite um número válido.");
+      mostrarAlerta("Erro", "Digite um número válido.");
       return;
     }
 
@@ -119,7 +121,7 @@ export default function AdminScreen() {
       [email]: "",
     });
 
-    Alert.alert("Saldo atualizado", `Novo saldo: ${numero} BRL`);
+    mostrarAlerta("Saldo atualizado", `Novo saldo: ${numero} BRL`);
   }
 
   async function zerarPalpiteUsuario(email: string) {
@@ -135,7 +137,7 @@ export default function AdminScreen() {
       const snapshot = await getDocs(q);
 
       if (snapshot.empty) {
-        Alert.alert("Sem palpite", "Esse usuário não possui palpite salvo.");
+        mostrarAlerta("Sem palpite", "Esse usuário não possui palpite salvo.");
         return;
       }
 
@@ -162,23 +164,20 @@ export default function AdminScreen() {
       await batch.commit();
       await contarPalpites();
 
-      Alert.alert("Sucesso", "Palpite desse usuário foi apagado.");
+      mostrarAlerta("Sucesso", "Palpite desse usuário foi apagado.");
     } catch (error) {
       console.log("Erro ao zerar palpite:", error);
-      Alert.alert("Erro", "Não foi possível apagar o palpite.");
+      mostrarAlerta("Erro", "Não foi possível apagar o palpite.");
     }
   }
 
   function confirmarZerarUsuario(email: string, nome: string) {
-    Alert.alert("Zerar palpite", `Deseja apagar o palpite de ${nome}?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: () => zerarPalpiteUsuario(email),
-      },
-    ]);
-  }
+  mostrarConfirmacao(
+    "Zerar palpite",
+    `Deseja apagar o palpite de ${nome}?`,
+    () => zerarPalpiteUsuario(email)
+  );
+}
 
   async function zerarTodosPalpites() {
     try {
@@ -211,49 +210,57 @@ export default function AdminScreen() {
       setGolsBrasilResultado("");
       setGolsArgentinaResultado("");
 
-      Alert.alert("Sucesso", "Todos os palpites e resultados foram apagados.");
+      mostrarAlerta("Sucesso", "Todos os palpites e resultados foram apagados.");
     } catch (error) {
       console.log("Erro ao zerar todos:", error);
-      Alert.alert("Erro", "Não foi possível zerar os palpites.");
+      mostrarAlerta("Erro", "Não foi possível zerar os palpites.");
     }
   }
 
   function confirmarZerarTodos() {
-    Alert.alert(
-      "Atenção",
-      "Deseja realmente apagar TODOS os palpites e resultados?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: zerarTodosPalpites,
-        },
-      ]
-    );
+  mostrarConfirmacao(
+    "Atenção",
+    "Deseja realmente apagar TODOS os palpites e resultados?",
+    () => zerarTodosPalpites()
+  );
+}
+
+  async function liberarUsuario(email: string) {
+  const usuariosRef = collection(db, "users");
+  const q = query(usuariosRef, where("emailLower", "==", email.toLowerCase()));
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    mostrarAlerta("Erro", "Usuário não encontrado.");
+    return;
   }
 
-  async function alternarBanimento(email: string, nome: string, banido?: boolean) {
-    if (banido) {
-      await desbanirUsuario(email);
-      await carregarUsuarios();
-      Alert.alert("Usuário liberado", `${nome} foi desbanido.`);
-      return;
-    }
+  const usuarioDoc = snapshot.docs[0];
 
-    Alert.alert("Banir usuário", `Deseja banir ${nome}?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Banir",
-        style: "destructive",
-        onPress: async () => {
-          await banirUsuario(email);
-          await carregarUsuarios();
-          Alert.alert("Usuário banido", `${nome} foi banido.`);
-        },
-      },
-    ]);
+  await updateDoc(doc(db, "users", usuarioDoc.id), {
+    banido: false,
+  });
+}
+  
+
+  async function alternarBanimento(email: string, nome: string, banido: boolean) {
+  if (banido) {
+    await liberarUsuario(email);
+    await carregarUsuarios();
+    mostrarAlerta("Usuário liberado", `${nome} foi desbanido.`);
+    return;
   }
+
+  confirmarBanirUsuario(email, nome);
+}
+
+function confirmarBanirUsuario(email: string, nome: string) {
+  mostrarConfirmacao("Banir usuário", `Deseja banir ${nome}?`, async () => {
+    await banirUsuario(email);
+    await carregarUsuarios();
+    mostrarAlerta("Usuário banido", `${nome} foi banido.`);
+  });
+}
 
   function verificarVencedor(
     palpiteBrasil: number,
@@ -284,7 +291,7 @@ export default function AdminScreen() {
       const golsArgentina = Number(golsArgentinaResultado);
 
       if (isNaN(golsBrasil) || isNaN(golsArgentina)) {
-        Alert.alert("Erro", "Digite o resultado oficial corretamente.");
+        mostrarAlerta("Erro", "Digite o resultado oficial corretamente.");
         return;
       }
 
@@ -308,7 +315,7 @@ export default function AdminScreen() {
       });
 
       if (apostas.length === 0) {
-        Alert.alert("Sem palpites", "Nenhum palpite encontrado.");
+        mostrarAlerta("Sem palpites", "Nenhum palpite encontrado.");
         return;
       }
 
@@ -420,7 +427,7 @@ export default function AdminScreen() {
           ? vencedoresExatos.map((item) => item.nome).join(", ")
           : "Nenhum vencedor exato";
 
-      Alert.alert(
+      mostrarAlerta(
         "Resultado calculado",
         `Resultado: Brasil ${golsBrasil} x ${golsArgentina} Argentina\n\nTotal: ${totalArrecadado.toFixed(
           2
@@ -434,7 +441,7 @@ export default function AdminScreen() {
       );
     } catch (error) {
       console.log("Erro ao calcular vencedores:", error);
-      Alert.alert("Erro", "Não foi possível calcular os vencedores.");
+      mostrarAlerta("Erro", "Não foi possível calcular os vencedores.");
     }
   }
 
@@ -445,7 +452,7 @@ export default function AdminScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#111827" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace("/(tabs)")}>
+        <TouchableOpacity onPress={() => router.replace("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
@@ -624,7 +631,7 @@ export default function AdminScreen() {
                     item.banido && styles.unbanButton,
                   ]}
                   onPress={() =>
-                    alternarBanimento(item.email, item.nome, item.banido)
+                    alternarBanimento(item.email, item.nome, Boolean(item.banido))
                   }
                 >
                   <Text

@@ -1,3 +1,4 @@
+import { mostrarAlerta } from "../utils/mostrarAlerta";
 import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
 import {
@@ -28,25 +29,25 @@ export default function LoginScreen() {
   // Se já existir um usuário logado (salvo no celular), ele pula pro app direto.
   useEffect(() => {
     if (user) {
-      router.replace("/(tabs)");
+      router.replace("/");
     }
   }, [user]);
 
   async function entrar() {
     try {
       await login(email.trim(), senha.trim());
-      router.replace("/(tabs)");
+      router.replace("/");
     } catch (error: any) {
-      Alert.alert("Erro no login", error.message);
+      mostrarAlerta("Erro no login", error.message);
     }
   }
 
   async function cadastrar() {
     try {
       await register(nome.trim(), email.trim(), senha.trim());
-      router.replace("/(tabs)");
+      router.replace("/");
     } catch (error: any) {
-      Alert.alert("Erro no cadastro", error.message);
+      mostrarAlerta("Erro no cadastro", error.message);
     }
   }
 

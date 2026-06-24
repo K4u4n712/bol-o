@@ -140,7 +140,7 @@ export default function BolaoScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)")}>
+        <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
@@ -237,7 +237,7 @@ export default function BolaoScreen() {
       <View style={styles.bottomMenu}>
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)")}
+          onPress={() => router.push("/")}
         >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
@@ -245,7 +245,7 @@ export default function BolaoScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/apostar")}
+          onPress={() => router.push("/apostar")}
         >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
@@ -258,7 +258,7 @@ export default function BolaoScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/ranking")}
+          onPress={() => router.push("/ranking")}
         >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
@@ -266,7 +266,7 @@ export default function BolaoScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/perfil")}
+          onPress={() => router.push("/perfil")}
         >
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>

@@ -124,7 +124,7 @@ export default function HomeScreen() {
   }
 
   function irParaAposta() {
-    router.push("/(tabs)/apostar");
+    router.push("/apostar");
   }
 
   return (
@@ -316,7 +316,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/apostar")}
+          onPress={() => router.push("/apostar")}
         >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
@@ -324,7 +324,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/bolao")}
+          onPress={() => router.push("/bolao")}
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
@@ -332,7 +332,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/ranking")}
+          onPress={() => router.push("/ranking")}
         >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
@@ -340,7 +340,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/perfil")}
+          onPress={() => router.push("/perfil")}
         >
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>

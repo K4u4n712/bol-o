@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import { router } from "expo-router";
 import { db } from "../../services/firebaseConfig";
 import {
@@ -186,7 +187,7 @@ export default function RankingScreen() {
   }
 
   function abrirInstrucoes() {
-    Alert.alert(
+    mostrarAlerta(
       "Como funciona o ranking?",
       "Placar exato: 10 pontos.\n\nAcertou apenas o vencedor ou empate: 3 pontos.\n\nErrou tudo: 0 pontos.\n\nO prêmio é dividido entre quem acertou o placar exato."
     );
@@ -201,7 +202,7 @@ export default function RankingScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)")}>
+        <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
@@ -302,7 +303,7 @@ export default function RankingScreen() {
       <View style={styles.bottomMenu}>
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)")}
+          onPress={() => router.push("/")}
         >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
@@ -310,7 +311,7 @@ export default function RankingScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/apostar")}
+          onPress={() => router.push("/apostar")}
         >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
@@ -318,7 +319,7 @@ export default function RankingScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/bolao")}
+          onPress={() => router.push("/bolao")}
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
@@ -331,7 +332,7 @@ export default function RankingScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/perfil")}
+          onPress={() => router.push("/perfil")}
         >
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>

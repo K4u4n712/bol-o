@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import { router } from "expo-router";
 import {
   View,
@@ -72,7 +73,7 @@ export default function GerenciarRodadaScreen() {
           </Text>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.replace("/(tabs)")}
+            onPress={() => router.replace("/")}
           >
             <Text style={styles.backButtonText}>Voltar para o app</Text>
           </TouchableOpacity>
@@ -181,7 +182,7 @@ export default function GerenciarRodadaScreen() {
       );
 
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível alterar o status da aposta.");
+      mostrarAlerta("Erro", "Não foi possível alterar o status da aposta.");
     }
   }
 
@@ -304,7 +305,7 @@ export default function GerenciarRodadaScreen() {
       <View style={styles.bottomMenu}>
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)")}
+          onPress={() => router.push("/")}
         >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
@@ -312,7 +313,7 @@ export default function GerenciarRodadaScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/apostar")}
+          onPress={() => router.push("/apostar")}
         >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
@@ -320,7 +321,7 @@ export default function GerenciarRodadaScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/bolao")}
+          onPress={() => router.push("/bolao")}
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
@@ -328,7 +329,7 @@ export default function GerenciarRodadaScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/ranking")}
+          onPress={() => router.push("/ranking")}
         >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>

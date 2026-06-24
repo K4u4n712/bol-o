@@ -1,3 +1,4 @@
+import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
 import { useAuth } from "../../contexts/AuthContext";
@@ -115,7 +116,7 @@ export default function ApostarScreen() {
   }
 
   function abrirAjuda() {
-    Alert.alert(
+    mostrarAlerta(
       "Como funciona?",
       "Escolha o placar exato. Cada usuário pode enviar apenas um palpite para este jogo. Após apostar, você ainda pode alterar uma única vez antes do prazo final."
     );
@@ -124,7 +125,7 @@ export default function ApostarScreen() {
   async function confirmarPalpite() {
     try {
       if (!user) {
-        Alert.alert("Erro", "Faça login primeiro.");
+        mostrarAlerta("Erro", "Faça login primeiro.");
         return;
       }
 
@@ -132,7 +133,7 @@ export default function ApostarScreen() {
       const horarioLimite = new Date(2026, 11, 31, 23, 59, 0);
 
       if (agora >= horarioLimite) {
-        Alert.alert("Apostas encerradas", "O prazo para alterar terminou.");
+        mostrarAlerta("Apostas encerradas", "O prazo para alterar terminou.");
         return;
       }
 
@@ -142,7 +143,7 @@ export default function ApostarScreen() {
       const apostaExistente = apostaSnap.exists() ? apostaSnap.data() : null;
 
       if (!apostaExistente && user.saldo < VALOR_APOSTA) {
-        Alert.alert(
+        mostrarAlerta(
           "Saldo insuficiente",
           `Você precisa ter pelo menos ${VALOR_APOSTA} BRL para apostar.`
         );
@@ -150,7 +151,7 @@ export default function ApostarScreen() {
       }
 
       if (apostaExistente && apostaExistente.jaAlterou) {
-        Alert.alert(
+        mostrarAlerta(
           "Alteração já usada",
           "Você só pode alterar seu palpite uma vez."
         );
@@ -191,13 +192,13 @@ export default function ApostarScreen() {
       setPlacarApostado(placar);
 
       if (apostaExistente) {
-        Alert.alert("Palpite alterado!", `Brasil ${placar} Argentina`);
+        mostrarAlerta("Palpite alterado!", `Brasil ${placar} Argentina`);
       } else {
-        Alert.alert("Palpite salvo!", `Brasil ${placar} Argentina`);
+        mostrarAlerta("Palpite salvo!", `Brasil ${placar} Argentina`);
       }
     } catch (error) {
       console.log("Erro ao salvar aposta:", error);
-      Alert.alert("Erro", "Não foi possível salvar a aposta.");
+      mostrarAlerta("Erro", "Não foi possível salvar a aposta.");
     }
   }
 
@@ -206,7 +207,7 @@ export default function ApostarScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)")}>
+        <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
@@ -369,7 +370,7 @@ export default function ApostarScreen() {
       <View style={styles.bottomMenu}>
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)")}
+          onPress={() => router.push("/")}
         >
           <Text style={styles.menuIcon}>⌂</Text>
           <Text style={styles.menuText}>Início</Text>
@@ -382,7 +383,7 @@ export default function ApostarScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/bolao")}
+          onPress={() => router.push("/bolao")}
         >
           <Text style={styles.menuIcon}>⚙</Text>
           <Text style={styles.menuText}>Bolão</Text>
@@ -390,7 +391,7 @@ export default function ApostarScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/ranking")}
+          onPress={() => router.push("/ranking")}
         >
           <Text style={styles.menuIcon}>♜</Text>
           <Text style={styles.menuText}>Ranking</Text>
@@ -398,7 +399,7 @@ export default function ApostarScreen() {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => router.push("/(tabs)/perfil")}
+          onPress={() => router.push("/perfil")}
         >
           <Text style={styles.menuIcon}>♙</Text>
           <Text style={styles.menuText}>Perfil</Text>
