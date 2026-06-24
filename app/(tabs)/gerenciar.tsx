@@ -1,52 +1,103 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
-  TouchableOpacity,
   Switch,
   Image,
-  StatusBar
+  StatusBar,
+  ActivityIndicator
 } from 'react-native';
-
-// --- DADOS FAKES (MOCK) PARA TESTAR O LAYOUT ---
-// Depois, isso virá da API da ESPN/Firebase
-const MOCK_JOGOS = [
-  {
-    id: '1',
-    data: '21/06/2026',
-    horario: '20:00',
-    status: 'AO_VIVO', // AO_VIVO, AGENDADO, FINALIZADO
-    placarCasa: 1,
-    placarFora: 0,
-    timeCasa: { nome: 'New Zealand', sigla: 'NZL', bandeira: 'https://flagcdn.com/w320/nz.png' },
-    timeFora: { nome: 'Egypt', sigla: 'EGY', bandeira: 'https://flagcdn.com/w320/eg.png' },
-    apostasFechadas: true,
-    totalApostas: 0,
-  },
-  {
-    id: '2',
-    data: '22/06/2026',
-    horario: '14:00',
-    status: 'AGENDADO',
-    placarCasa: null,
-    placarFora: null,
-    timeCasa: { nome: 'Argentina', sigla: 'ARG', bandeira: 'https://flagcdn.com/w320/ar.png' },
-    timeFora: { nome: 'Austria', sigla: 'AUT', bandeira: 'https://flagcdn.com/w320/at.png' },
-    apostasFechadas: false,
-    totalApostas: 15,
-  }
-];
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../contexts/AuthContext';
+import { Redirect } from 'expo-router';
 
 export default function GerenciarApostasScreen() {
-  const [jogos, setJogos] = useState(MOCK_JOGOS);
+  const { user } = useAuth();
+  
+  const [jogos, setJogos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Função para alternar o toggle de "Apostas Fechadas"
+  // 1. TRAVA DE SEGURANÇA: Apenas administradores podem acessar
+  // Substitua o email abaixo pelo email de vocês
+  if (user?.email !== "admin@bolao.com") {
+    return <Redirect href="/" />;
+  }
+
+  // 3. PUXAR DADOS DA ESPN
+  useEffect(() => {
+    const buscarJogos = async () => {
+      try {
+        const response = await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard');
+        const data = await response.json();
+
+        const agora = new Date();
+        const limite48h = new Date(agora.getTime() + (48 * 60 * 60 * 1000));
+
+        const jogosFiltrados = data.events.reduce((acc: any[], event: any) => {
+          const dataJogo = new Date(event.date);
+          const status = event.status.type.state; // 'pre' (agendado), 'in' (ao vivo), 'post' (finalizado)
+          const competidores = event.competitions[0].competitors;
+          const timeCasa = competidores.find((c: any) => c.homeAway === 'home');
+          const timeFora = competidores.find((c: any) => c.homeAway === 'away');
+
+          // Não mostrar jogos além de 48 horas no futuro
+          if (dataJogo > limite48h) return acc;
+
+          // Sumir com o jogo 30 min (aprox) após terminar
+          if (status === 'post') {
+            const tempoDesdeInicio = agora.getTime() - dataJogo.getTime();
+            if (tempoDesdeInicio > 9000000) {
+              return acc; 
+            }
+          }
+
+          let statusBR = 'AGENDADO';
+          if (status === 'in') statusBR = 'AO_VIVO';
+          if (status === 'post') statusBR = 'FINALIZADO';
+
+          acc.push({
+            id: event.id,
+            data: dataJogo.toLocaleDateString('pt-BR'),
+            horario: dataJogo.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            status: statusBR,
+            placarCasa: timeCasa.score,
+            placarFora: timeFora.score,
+            timeCasa: { 
+              nome: timeCasa.team.displayName, 
+              sigla: timeCasa.team.abbreviation, 
+              bandeira: timeCasa.team.logo || 'https://via.placeholder.com/50' 
+            },
+            timeFora: { 
+              nome: timeFora.team.displayName, 
+              sigla: timeFora.team.abbreviation, 
+              bandeira: timeFora.team.logo || 'https://via.placeholder.com/50' 
+            },
+            apostasAbertas: status === 'pre', // 2. Lógica nova: só abre automaticamente os que não começaram
+            totalApostas: 0,
+          });
+
+          return acc;
+        }, []);
+
+        setJogos(jogosFiltrados);
+        setLoading(false);
+      } catch (error) {
+        console.error("Erro ao buscar jogos da ESPN:", error);
+        setLoading(false);
+      }
+    };
+
+    buscarJogos();
+    const interval = setInterval(buscarJogos, 60000); // Atualiza placar a cada minuto
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. LÓGICA DO TOGGLE CORRIGIDA (Apostas Abertas)
   const toggleApostas = (id: string) => {
     setJogos(jogos.map(jogo => 
-      jogo.id === id ? { ...jogo, apostasFechadas: !jogo.apostasFechadas } : jogo
+      jogo.id === id ? { ...jogo, apostasAbertas: !jogo.apostasAbertas } : jogo
     ));
   };
 
@@ -55,7 +106,7 @@ export default function GerenciarApostasScreen() {
 
     return (
       <View style={[styles.card, isAoVivo ? styles.cardBorderAoVivo : styles.cardBorderAgendado]}>
-        {/* Cabeçalho do Card */}
+        
         <View style={styles.cardHeader}>
           <View>
             <Text style={styles.dataText}>{item.data}</Text>
@@ -65,13 +116,13 @@ export default function GerenciarApostasScreen() {
               <Text style={styles.badgeAgendado}>📅 AGENDADO</Text>
             )}
           </View>
+          
           <View style={styles.statusRadio}>
-            <View style={item.apostasFechadas ? styles.radioFechado : styles.radioAberto} />
-            <Text style={styles.statusText}>{item.apostasFechadas ? 'Fechado' : 'Aberto'}</Text>
+            <View style={item.apostasAbertas ? styles.radioAberto : styles.radioFechado} />
+            <Text style={styles.statusText}>{item.apostasAbertas ? 'Aberto' : 'Fechado'}</Text>
           </View>
         </View>
 
-        {/* Placar / Times */}
         <View style={styles.matchRow}>
           <View style={styles.teamContainer}>
             <Image source={{ uri: item.timeCasa.bandeira }} style={styles.flag} />
@@ -95,18 +146,16 @@ export default function GerenciarApostasScreen() {
           </View>
         </View>
 
-        {/* Toggle de Apostas */}
         <View style={styles.toggleContainer}>
-          <Text style={styles.toggleLabel}>Apostas Fechadas</Text>
+          <Text style={styles.toggleLabel}>Apostas Abertas</Text>
           <Switch 
-            value={item.apostasFechadas}
+            value={item.apostasAbertas}
             onValueChange={() => toggleApostas(item.id)}
             trackColor={{ false: "#D1D5DB", true: "#006B2E" }}
             thumbColor={"#FFFFFF"}
           />
         </View>
 
-        {/* Rodapé do Card */}
         <View style={styles.cardFooter}>
           <Text style={styles.footerText}>👥 {item.totalApostas} aposta(s)</Text>
         </View>
@@ -114,11 +163,19 @@ export default function GerenciarApostasScreen() {
     );
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#006B2E" />
+        <Text style={{ marginTop: 12, color: '#006B2E', fontWeight: 'bold' }}>Buscando jogos oficiais...</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F4F6F9" />
       
-      {/* HEADER DA TELA */}
       <View style={styles.header}>
         <View style={styles.headerIconContainer}>
           <Text style={styles.headerIcon}>📚</Text>
@@ -131,10 +188,9 @@ export default function GerenciarApostasScreen() {
 
       <Text style={styles.listTitle}>☰ Gerenciamento ({jogos.length})</Text>
 
-      {/* LISTA DE JOGOS */}
       <FlatList
         data={jogos}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id.toString()}
         renderItem={renderCardJogo}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
@@ -185,7 +241,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 100, // Espaço para o menu inferior não sobrepor
+    paddingBottom: 100, 
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -196,10 +252,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardBorderAoVivo: {
-    borderLeftColor: '#EF4444', // Vermelho para ao vivo
+    borderLeftColor: '#EF4444', 
   },
   cardBorderAgendado: {
-    borderLeftColor: '#00C4B4', // Ciano/Verde para agendado
+    borderLeftColor: '#00C4B4', 
   },
   cardHeader: {
     flexDirection: 'row',
@@ -262,7 +318,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 35,
     borderRadius: 6,
-    resizeMode: 'cover',
+    resizeMode: 'contain',
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },

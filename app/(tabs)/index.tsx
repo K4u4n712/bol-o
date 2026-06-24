@@ -293,6 +293,15 @@ export default function HomeScreen() {
           <Text style={styles.menuText}>Ranking</Text>
         </TouchableOpacity>
 
+        {/* BOTÃO GERENCIAR ADICIONADO AQUI, SEPARADO DO PERFIL */}
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/gerenciar")}
+        >
+          <Text style={styles.menuIcon}>⚙️</Text>
+          <Text style={styles.menuText}>Gerenciar</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.menuItem}
           onPress={() => router.push("/perfil")}
