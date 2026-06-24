@@ -1,614 +1,323 @@
-import { useEffect, useState } from "react";
-import { mostrarAlerta } from "../../utils/mostrarAlerta";
-import { router } from "expo-router";
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   SafeAreaView,
-  StatusBar,
-  ScrollView,
+  FlatList,
+  TouchableOpacity,
   Switch,
   Image,
-  Alert,
-} from "react-native";
-import { useAuth } from "../../contexts/AuthContext";
-import { db } from "../../services/firebaseConfig";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+  StatusBar
+} from 'react-native';
 
-// Tipagem para os jogos que virão da API
-type Jogo = {
-  id: string;
-  dataIso: string;
-  dataFormatada: string;
-  horaFormatada: string;
-  status: "ao-vivo" | "agendado" | "encerrado";
-  timeCasa: string;
-  logoCasa: string;
-  placarCasa: number | null;
-  timeFora: string;
-  logoFora: string;
-  placarFora: number | null;
-  tempoDecorrido?: string;
-  apostasAbertas: boolean;
-};
+// --- DADOS FAKES (MOCK) PARA TESTAR O LAYOUT ---
+// Depois, isso virá da API da ESPN/Firebase
+const MOCK_JOGOS = [
+  {
+    id: '1',
+    data: '21/06/2026',
+    horario: '20:00',
+    status: 'AO_VIVO', // AO_VIVO, AGENDADO, FINALIZADO
+    placarCasa: 1,
+    placarFora: 0,
+    timeCasa: { nome: 'New Zealand', sigla: 'NZL', bandeira: 'https://flagcdn.com/w320/nz.png' },
+    timeFora: { nome: 'Egypt', sigla: 'EGY', bandeira: 'https://flagcdn.com/w320/eg.png' },
+    apostasFechadas: true,
+    totalApostas: 0,
+  },
+  {
+    id: '2',
+    data: '22/06/2026',
+    horario: '14:00',
+    status: 'AGENDADO',
+    placarCasa: null,
+    placarFora: null,
+    timeCasa: { nome: 'Argentina', sigla: 'ARG', bandeira: 'https://flagcdn.com/w320/ar.png' },
+    timeFora: { nome: 'Austria', sigla: 'AUT', bandeira: 'https://flagcdn.com/w320/at.png' },
+    apostasFechadas: false,
+    totalApostas: 15,
+  }
+];
 
-export default function GerenciarRodadaScreen() {
-  const { user } = useAuth();
-  const [jogos, setJogos] = useState<Jogo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [configApostas, setConfigApostas] = useState<Record<string, boolean>>({});
+export default function GerenciarApostasScreen() {
+  const [jogos, setJogos] = useState(MOCK_JOGOS);
 
-  useEffect(() => {
-    // 1. Ouve o Firebase em tempo real para saber quais jogos estão com apostas abertas
-    // Estamos usando um documento único 'status_rodada' dentro da coleção 'jogos_config'
-    const unsub = onSnapshot(doc(db, "jogos_config", "status_rodada"), (doc) => {
-      if (doc.exists()) {
-        setConfigApostas(doc.data());
-      }
-    });
+  // Função para alternar o toggle de "Apostas Fechadas"
+  const toggleApostas = (id: string) => {
+    setJogos(jogos.map(jogo => 
+      jogo.id === id ? { ...jogo, apostasFechadas: !jogo.apostasFechadas } : jogo
+    ));
+  };
 
-    // 2. Busca os jogos na API
-    buscarJogosAPI();
+  const renderCardJogo = ({ item }: { item: any }) => {
+    const isAoVivo = item.status === 'AO_VIVO';
 
-    // 3. Atualiza a lista a cada 30 segundos para manter o placar ao vivo
-    const interval = setInterval(buscarJogosAPI, 30000);
-
-    return () => {
-      unsub();
-      clearInterval(interval);
-    };
-  }, []);
-
-  // VERIFICAÇÃO DE ADMIN
-  if (!user || user.role !== "admin") {
     return (
-      <SafeAreaView style={styles.safeBlocked}>
-        <View style={styles.blockedBox}>
-          <Text style={styles.blockedIcon}>🔒</Text>
-          <Text style={styles.blockedTitle}>Acesso bloqueado</Text>
-          <Text style={styles.blockedText}>
-            Apenas administradores podem acessar o painel de gerenciamento.
-          </Text>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.replace("/")}
-          >
-            <Text style={styles.backButtonText}>Voltar para o app</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  async function buscarJogosAPI() {
-    try {
-      // Endpoint da ESPN para futebol (FIFA World Cup)
-      // Nota: Como a copa não está acontecendo, essa API pode retornar vazia no momento.
-      const response = await fetch(
-        "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
-      );
-      const data = await response.json();
-
-      let jogosFormatados: Jogo[] = [];
-
-      // SE A API RETORNAR JOGOS (Quando a copa começar)
-      if (data.events && data.events.length > 0) {
-        const agora = new Date().getTime();
-
-        data.events.forEach((evento: any) => {
-          const statusDaApi = evento.status.type.state; // 'pre', 'in', 'post'
-          const dataJogo = new Date(evento.date);
-          
-          // Lógica: Se acabou (post) e já passou 1 hora (3600000 ms), ignora o jogo (não entra no array)
-          if (statusDaApi === "post" && agora - dataJogo.getTime() > 3600000) {
-            return;
-          }
-
-          let statusLocal: "agendado" | "ao-vivo" | "encerrado" = "agendado";
-          if (statusDaApi === "in") statusLocal = "ao-vivo";
-          if (statusDaApi === "post") statusLocal = "encerrado";
-
-          jogosFormatados.push({
-            id: evento.id,
-            dataIso: evento.date,
-            dataFormatada: dataJogo.toLocaleDateString("pt-BR"),
-            horaFormatada: dataJogo.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-            status: statusLocal,
-            tempoDecorrido: evento.status.displayClock,
-            timeCasa: evento.competitions[0].competitors[0].team.name,
-            logoCasa: evento.competitions[0].competitors[0].team.logo,
-            placarCasa: parseInt(evento.competitions[0].competitors[0].score) || 0,
-            timeFora: evento.competitions[0].competitors[1].team.name,
-            logoFora: evento.competitions[0].competitors[1].team.logo,
-            placarFora: parseInt(evento.competitions[0].competitors[1].score) || 0,
-            apostasAbertas: false, // Será sobreescrito pelo state do Firebase abaixo
-          });
-        });
-      } else {
-        // FALLBACK: MOCK DATA PARA TESTE (Já que não tem jogo da copa hoje)
-        // Isso garante que você veja a tela funcionando igual ao seu print
-        jogosFormatados = [
-          {
-            id: "jogo_1",
-            dataIso: "2026-06-21T18:00:00Z",
-            dataFormatada: "21/06/2026",
-            horaFormatada: "18:00",
-            status: "ao-vivo",
-            timeCasa: "New Zealand",
-            logoCasa: "https://flagcdn.com/w320/nz.png",
-            placarCasa: 1,
-            timeFora: "Egypt",
-            logoFora: "https://flagcdn.com/w320/eg.png",
-            placarFora: 0,
-            apostasAbertas: false,
-          },
-          {
-            id: "jogo_2",
-            dataIso: "2026-06-22T14:00:00Z",
-            dataFormatada: "22/06/2026",
-            horaFormatada: "14:00",
-            status: "agendado",
-            timeCasa: "Argentina",
-            logoCasa: "https://flagcdn.com/w320/ar.png",
-            placarCasa: null,
-            timeFora: "Austria",
-            logoFora: "https://flagcdn.com/w320/at.png",
-            placarFora: null,
-            apostasAbertas: true,
-          },
-        ];
-      }
-
-      setJogos(jogosFormatados);
-    } catch (error) {
-      console.log("Erro ao buscar jogos:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Função que atualiza no Firebase se a aposta daquele jogo está aberta ou fechada
-  async function toggleApostas(jogoId: string, statusAtual: boolean) {
-    try {
-      const novoStatus = !statusAtual;
-      
-      // Atualiza o objeto inteiro no Firebase (merge: true não apaga os outros jogos)
-      await setDoc(
-        doc(db, "jogos_config", "status_rodada"),
-        { [jogoId]: novoStatus },
-        { merge: true }
-      );
-
-    } catch (error) {
-      mostrarAlerta("Erro", "Não foi possível alterar o status da aposta.");
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* HEADER HERO */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroLeftBar} />
-          <View style={styles.heroContent}>
-            <Text style={styles.heroIcon}>📚</Text>
-            <View>
-              <Text style={styles.heroTitle}>Gerenciar Rodada Copa</Text>
-              <Text style={styles.heroTitleYear}>2026</Text>
-              <Text style={styles.heroSubtitle}>
-                Inteligência de exibição em tempo real
-              </Text>
-            </View>
+      <View style={[styles.card, isAoVivo ? styles.cardBorderAoVivo : styles.cardBorderAgendado]}>
+        {/* Cabeçalho do Card */}
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.dataText}>{item.data}</Text>
+            {isAoVivo ? (
+              <Text style={styles.badgeAoVivo}>📺 AO VIVO</Text>
+            ) : (
+              <Text style={styles.badgeAgendado}>📅 AGENDADO</Text>
+            )}
+          </View>
+          <View style={styles.statusRadio}>
+            <View style={item.apostasFechadas ? styles.radioFechado : styles.radioAberto} />
+            <Text style={styles.statusText}>{item.apostasFechadas ? 'Fechado' : 'Aberto'}</Text>
           </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionIcon}>𝍖</Text>
-          <Text style={styles.sectionTitle}>
-            Gerenciamento ({jogos.length})
-          </Text>
+        {/* Placar / Times */}
+        <View style={styles.matchRow}>
+          <View style={styles.teamContainer}>
+            <Image source={{ uri: item.timeCasa.bandeira }} style={styles.flag} />
+            <Text style={styles.teamName}>{item.timeCasa.nome}</Text>
+          </View>
+
+          <View style={styles.scoreContainer}>
+            {isAoVivo || item.status === 'FINALIZADO' ? (
+              <Text style={styles.scoreText}>{item.placarCasa} - {item.placarFora}</Text>
+            ) : (
+              <>
+                <Text style={styles.vsText}>VS</Text>
+                <Text style={styles.timeText}>{item.horario}</Text>
+              </>
+            )}
+          </View>
+
+          <View style={styles.teamContainer}>
+            <Image source={{ uri: item.timeFora.bandeira }} style={styles.flag} />
+            <Text style={styles.teamName}>{item.timeFora.nome}</Text>
+          </View>
         </View>
 
-        {loading ? (
-          <Text style={styles.loadingText}>Buscando jogos ao vivo...</Text>
-        ) : (
-          jogos.map((jogo) => {
-            // Verifica no estado do Firebase se a aposta está aberta. Se não existir, assume false.
-            const apostaAberta = configApostas[jogo.id] || false;
+        {/* Toggle de Apostas */}
+        <View style={styles.toggleContainer}>
+          <Text style={styles.toggleLabel}>Apostas Fechadas</Text>
+          <Switch 
+            value={item.apostasFechadas}
+            onValueChange={() => toggleApostas(item.id)}
+            trackColor={{ false: "#D1D5DB", true: "#006B2E" }}
+            thumbColor={"#FFFFFF"}
+          />
+        </View>
 
-            return (
-              <View style={styles.gameCard} key={jogo.id}>
-                {/* Borda lateral colorida dependendo do status */}
-                <View
-                  style={[
-                    styles.cardLeftBar,
-                    jogo.status === "ao-vivo"
-                      ? styles.barAoVivo
-                      : styles.barAgendado,
-                  ]}
-                />
-
-                <View style={styles.cardContent}>
-                  {/* DATA E STATUS */}
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.dateText}>{jogo.dataFormatada}</Text>
-                    <View style={styles.statusBox}>
-                      {jogo.status === "ao-vivo" ? (
-                        <Text style={styles.statusAoVivo}>📺 AO VIVO</Text>
-                      ) : (
-                        <Text style={styles.statusAgendado}>📅 AGENDADO</Text>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* TIMES E PLACAR */}
-                  <View style={styles.teamsRow}>
-                    <View style={styles.teamCol}>
-                      <Image
-                        source={{ uri: jogo.logoCasa }}
-                        style={styles.flagImage}
-                      />
-                      <Text style={styles.teamName}>{jogo.timeCasa}</Text>
-                    </View>
-
-                    <View style={styles.scoreCol}>
-                      {jogo.status === "agendado" ? (
-                        <>
-                          <Text style={styles.vsText}>VS</Text>
-                          <Text style={styles.timeText}>{jogo.horaFormatada}</Text>
-                        </>
-                      ) : (
-                        <Text style={styles.scoreText}>
-                          {jogo.placarCasa} - {jogo.placarFora}
-                        </Text>
-                      )}
-                    </View>
-
-                    <View style={styles.teamCol}>
-                      <Image
-                        source={{ uri: jogo.logoFora }}
-                        style={styles.flagImage}
-                      />
-                      <Text style={styles.teamName}>{jogo.timeFora}</Text>
-                    </View>
-                  </View>
-
-                  {/* CAIXA DO SWITCH (APOSTAS ABERTAS/FECHADAS) */}
-                  <View style={styles.toggleBox}>
-                    <Text style={styles.toggleLabel}>
-                      {apostaAberta ? "Apostas Abertas" : "Apostas Fechadas"}
-                    </Text>
-                    <Switch
-                      trackColor={{ false: "#D1D5DB", true: "#86EFAC" }}
-                      thumbColor={apostaAberta ? "#16A34A" : "#9CA3AF"}
-                      onValueChange={() => toggleApostas(jogo.id, apostaAberta)}
-                      value={apostaAberta}
-                    />
-                  </View>
-
-                  {/* FOOTER */}
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.footerText}>👥 0 aposta(s)</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-
-      {/* MENU INFERIOR - IDÊNTICO AO SEU */}
-      <View style={styles.bottomMenu}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/")}
-        >
-          <Text style={styles.menuIcon}>🏠</Text>
-          <Text style={styles.menuText}>Início</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/apostar")}
-        >
-          <Text style={styles.menuIcon}>🎯</Text>
-          <Text style={styles.menuText}>Apostar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/bolao")}
-        >
-          <Text style={styles.menuIcon}>👥</Text>
-          <Text style={styles.menuText}>Bolão</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/ranking")}
-        >
-          <Text style={styles.menuIcon}>🏆</Text>
-          <Text style={styles.menuText}>Ranking</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItemActive}>
-          <Text style={styles.menuIcon}>⚙️</Text>
-          <Text style={styles.menuTextActive}>Gerenciar</Text>
-        </TouchableOpacity>
+        {/* Rodapé do Card */}
+        <View style={styles.cardFooter}>
+          <Text style={styles.footerText}>👥 {item.totalApostas} aposta(s)</Text>
+        </View>
       </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F4F6F9" />
+      
+      {/* HEADER DA TELA */}
+      <View style={styles.header}>
+        <View style={styles.headerIconContainer}>
+          <Text style={styles.headerIcon}>📚</Text>
+        </View>
+        <View>
+          <Text style={styles.headerTitle}>Gerenciar Rodada Copa 2026</Text>
+          <Text style={styles.headerSubtitle}>Inteligência de exibição em tempo real</Text>
+        </View>
+      </View>
+
+      <Text style={styles.listTitle}>☰ Gerenciamento ({jogos.length})</Text>
+
+      {/* LISTA DE JOGOS */}
+      <FlatList
+        data={jogos}
+        keyExtractor={(item) => item.id}
+        renderItem={renderCardJogo}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8FAFC" },
-  safeBlocked: { flex: 1, backgroundColor: "#F3F6F4" },
-
-  scrollContent: { padding: 16, paddingBottom: 100 },
-
-  // HERO (Cabeçalho branco com borda verde)
-  heroCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    flexDirection: "row",
-    overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    marginBottom: 24,
-    marginTop: 10,
-  },
-  heroLeftBar: {
-    width: 6,
-    backgroundColor: "#006B2E",
-  },
-  heroContent: {
+  container: {
     flex: 1,
-    padding: 20,
-    flexDirection: "row",
-    alignItems: "center",
+    backgroundColor: '#F4F6F9',
   },
-  heroIcon: {
-    fontSize: 34,
-    marginRight: 16,
+  header: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 2,
+    borderLeftWidth: 6,
+    borderLeftColor: '#006B2E',
   },
-  heroTitle: {
-    color: "#006B2E",
+  headerIconContainer: {
+    marginRight: 12,
+  },
+  headerIcon: {
+    fontSize: 28,
+  },
+  headerTitle: {
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: '900',
+    color: '#006B2E',
+    maxWidth: '90%',
   },
-  heroTitleYear: {
-    color: "#006B2E",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  heroSubtitle: {
-    color: "#9CA3AF",
+  headerSubtitle: {
     fontSize: 12,
-    fontWeight: "600",
+    color: '#6B7280',
     marginTop: 4,
   },
-
-  // TÍTULO DA SEÇÃO
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  sectionIcon: {
-    color: "#006B2E",
-    fontSize: 18,
-    fontWeight: "900",
-    marginRight: 8,
-  },
-  sectionTitle: {
-    color: "#006B2E",
+  listTitle: {
     fontSize: 16,
-    fontWeight: "900",
+    fontWeight: '800',
+    color: '#006B2E',
+    marginLeft: 20,
+    marginBottom: 10,
   },
-
-  loadingText: {
-    textAlign: "center",
-    marginTop: 20,
-    color: "#6B7280",
-    fontWeight: "700",
+  listContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 100, // Espaço para o menu inferior não sobrepor
   },
-
-  // CARD DO JOGO
-  gameCard: {
-    backgroundColor: "#FFFFFF",
+  card: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    flexDirection: "row",
-    overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
+    elevation: 3,
+    borderLeftWidth: 5,
+    overflow: 'hidden',
   },
-  cardLeftBar: {
-    width: 5,
+  cardBorderAoVivo: {
+    borderLeftColor: '#EF4444', // Vermelho para ao vivo
   },
-  barAoVivo: { backgroundColor: "#EF4444" }, // Vermelho
-  barAgendado: { backgroundColor: "#2DD4BF" }, // Turquesa
-
-  cardContent: {
-    flex: 1,
-    padding: 16,
+  cardBorderAgendado: {
+    borderLeftColor: '#00C4B4', // Ciano/Verde para agendado
   },
   cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    paddingBottom: 0,
   },
-  dateText: {
-    color: "#9CA3AF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  statusBox: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statusAoVivo: {
-    color: "#EF4444",
+  dataText: {
     fontSize: 12,
-    fontWeight: "900",
+    color: '#6B7280',
+    fontWeight: '600',
   },
-  statusAgendado: {
-    color: "#2DD4BF",
+  badgeAoVivo: {
     fontSize: 12,
-    fontWeight: "900",
-  },
-
-  // TIMES E PLACAR
-  teamsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  teamCol: {
-    flex: 1,
-    alignItems: "center",
-  },
-  flagImage: {
-    width: 48,
-    height: 32,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 8,
-    resizeMode: "cover",
-  },
-  teamName: {
-    color: "#111827",
-    fontSize: 13,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  scoreCol: {
-    width: 80,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scoreText: {
-    color: "#006B2E",
-    fontSize: 26,
-    fontWeight: "900",
-  },
-  vsText: {
-    color: "#10B981",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  timeText: {
-    color: "#006B2E",
-    fontSize: 14,
-    fontWeight: "900",
+    color: '#EF4444',
+    fontWeight: '900',
     marginTop: 4,
   },
-
-  // CAIXA DO SWITCH
-  toggleBox: {
-    backgroundColor: "#F8FAFC",
+  badgeAgendado: {
+    fontSize: 12,
+    color: '#00C4B4',
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  statusRadio: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  radioFechado: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#D1D5DB',
+    marginRight: 6,
+  },
+  radioAberto: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#006B2E',
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  matchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 15,
+  },
+  teamContainer: {
+    alignItems: 'center',
+    width: 80,
+  },
+  flag: {
+    width: 50,
+    height: 35,
+    borderRadius: 6,
+    resizeMode: 'cover',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  teamName: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#111827',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  scoreContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreText: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#006B2E',
+  },
+  vsText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#006B2E',
+  },
+  timeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#006B2E',
+    marginTop: 4,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    marginHorizontal: 16,
+    marginTop: 20,
+    padding: 12,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
   },
   toggleLabel: {
-    color: "#111827",
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: '700',
+    color: '#374151',
   },
-
-  // FOOTER DO CARD
   cardFooter: {
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    paddingTop: 12,
+    borderTopColor: '#F3F4F6',
+    padding: 12,
+    marginTop: 16,
   },
   footerText: {
-    color: "#6B7280",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  // MENU INFERIOR
-  bottomMenu: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 74,
-    backgroundColor: "#111827", // Fundo escuro como no print
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    paddingBottom: 8,
-  },
-  menuItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  menuItemActive: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  menuIcon: {
-    fontSize: 20,
-  },
-  menuText: {
-    fontSize: 10,
-    color: "#9CA3AF",
-    marginTop: 2,
-    fontWeight: "700",
-  },
-  menuTextActive: {
-    fontSize: 10,
-    color: "#FFFFFF",
-    marginTop: 2,
-    fontWeight: "900",
-  },
-
-  // TELA DE BLOQUEIO PARA QUEM NÃO É ADMIN
-  blockedBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  blockedIcon: { fontSize: 55, marginBottom: 12 },
-  blockedTitle: { fontSize: 25, fontWeight: "900", color: "#111827" },
-  blockedText: {
-    color: "#6B7280",
-    fontSize: 15,
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  backButton: {
-    backgroundColor: "#006B2E",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 16,
-  },
-  backButtonText: { color: "#FFFFFF", fontWeight: "900" },
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginLeft: 10,
+  }
 });
