@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   where,
+  getDocs,
 } from "firebase/firestore";
 import {
   View,
@@ -20,14 +21,16 @@ import {
   Image,
   Modal,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 
-const JOGO_ID = "brasil-argentina-2026";
 const VALOR_APOSTA = 10;
+// Mantivemos este ID apenas para não quebrar a sua lógica atual de notificações do Backend
+const JOGO_ID_NOTIFICACAO = "brasil-argentina-2026"; 
 
 function gerarIdNotificacao(email: string) {
-  return `${JOGO_ID}_${email
+  return `${JOGO_ID_NOTIFICACAO}_${email
     .toLowerCase()
     .replace(/\./g, "_")
     .replace(/#/g, "_")
@@ -41,79 +44,121 @@ function gerarIdNotificacao(email: string) {
 export default function HomeScreen() {
   const { user } = useAuth();
 
+  const [proximoJogo, setProximoJogo] = useState<any>(null);
+  const [loadingJogo, setLoadingJogo] = useState(true);
+  
   const [participantes, setParticipantes] = useState(0);
   const [notificacao, setNotificacao] = useState<any>(null);
   const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
+  const totalBolao = participantes * VALOR_APOSTA;
 
-  const valorAposta = VALOR_APOSTA;
-  const totalBolao = participantes * valorAposta;
-
+  // 1. ANIMAÇÃO DO PONTO "AO VIVO"
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1.35,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulse, { toValue: 1.35, duration: 750, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 750, useNativeDriver: true }),
       ])
     ).start();
   }, []);
 
+  // 2. BUSCAR O PRIMEIRO JOGO ABERTO DA ESPN E FIREBASE
   useEffect(() => {
-    const apostasRef = collection(db, "apostas");
-    const qApostas = query(apostasRef, where("jogoId", "==", JOGO_ID));
+    const buscarJogoDestaque = async () => {
+      try {
+        const agora = new Date();
+        const limite48h = new Date(agora.getTime() + (48 * 60 * 60 * 1000));
+        
+        const fData = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(agora)}-${fData(limite48h)}`;
 
-    const unsubscribeApostas = onSnapshot(
-      qApostas,
-      (snapshot) => {
-        setParticipantes(snapshot.size);
-      },
-      (error) => {
-        console.log("Erro ao carregar participantes:", error);
+        const response = await fetch(urlESPN);
+        const data = await response.json();
+
+        const statusSnapshot = await getDocs(collection(db, "status_apostas"));
+        const statusFirebase: Record<string, boolean> = {};
+        statusSnapshot.forEach(docSnap => {
+          statusFirebase[docSnap.id] = docSnap.data().aberta;
+        });
+
+        let jogoEncontrado = null;
+
+        for (const event of data.events) {
+          const dataJogo = new Date(event.date);
+          const status = event.status.type.state; 
+          
+          if (dataJogo > limite48h || status === 'post') continue;
+
+          const jaTemStatus = statusFirebase[event.id] !== undefined;
+          const isOpen = jaTemStatus ? statusFirebase[event.id] : (status === 'pre');
+
+          if (isOpen) {
+            const competidores = event.competitions[0].competitors;
+            const timeCasa = competidores.find((c: any) => c.homeAway === 'home');
+            const timeFora = competidores.find((c: any) => c.homeAway === 'away');
+
+            jogoEncontrado = {
+              id: event.id,
+              data: dataJogo.toLocaleDateString('pt-BR'),
+              horario: dataJogo.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+              timeCasa: { nome: timeCasa.team.displayName, sigla: timeCasa.team.abbreviation, bandeira: timeCasa.team.logo },
+              timeFora: { nome: timeFora.team.displayName, sigla: timeFora.team.abbreviation, bandeira: timeFora.team.logo }
+            };
+            break; // Interrompe o loop após achar o primeiro jogo aberto
+          }
+        }
+
+        setProximoJogo(jogoEncontrado);
+        setLoadingJogo(false);
+      } catch (error) {
+        console.error("Erro ao carregar jogo da home:", error);
+        setLoadingJogo(false);
       }
-    );
+    };
 
+    buscarJogoDestaque();
+  }, []);
+
+  // 3. MONITORAR PARTICIPANTES DO JOGO DINÂMICO
+  useEffect(() => {
+    if (!proximoJogo) return; // Só busca se tiver um jogo definido
+
+    const apostasRef = collection(db, "apostas");
+    // Filtra para contar apenas quem apostou neste jogo específico
+    const qApostas = query(apostasRef, where("jogoId", "==", proximoJogo.id.toString()));
+
+    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
+      setParticipantes(snapshot.size);
+    }, (error) => {
+      console.log("Erro ao carregar participantes:", error);
+    });
+
+    return () => unsubscribeApostas();
+  }, [proximoJogo]);
+
+  // 4. MONITORAR NOTIFICAÇÕES GERAIS
+  useEffect(() => {
     let unsubscribeNotificacao: (() => void) | undefined;
 
     if (user?.email) {
-      const notificacaoRef = doc(
-        db,
-        "notificacoes",
-        gerarIdNotificacao(user.email)
-      );
-
-      unsubscribeNotificacao = onSnapshot(
-        notificacaoRef,
-        (snapshot) => {
-          if (!snapshot.exists()) {
-            setNotificacao(null);
-            return;
-          }
-
-          setNotificacao(snapshot.data());
-        },
-        (error) => {
-          console.log("Erro ao carregar notificação:", error);
+      const notificacaoRef = doc(db, "notificacoes", gerarIdNotificacao(user.email));
+      unsubscribeNotificacao = onSnapshot(notificacaoRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          setNotificacao(null);
+          return;
         }
-      );
+        setNotificacao(snapshot.data());
+      }, (error) => {
+        console.log("Erro ao carregar notificação:", error);
+      });
     } else {
       setNotificacao(null);
     }
 
     return () => {
-      unsubscribeApostas();
-
-      if (unsubscribeNotificacao) {
-        unsubscribeNotificacao();
-      }
+      if (unsubscribeNotificacao) unsubscribeNotificacao();
     };
   }, [user]);
 
@@ -133,11 +178,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.topBar}>
             <TouchableOpacity>
@@ -145,14 +186,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <View style={styles.logoRow}>
-              <Animated.View
-                style={[
-                  styles.liveDot,
-                  {
-                    transform: [{ scale: pulse }],
-                  },
-                ]}
-              />
+              <Animated.View style={[styles.liveDot, { transform: [{ scale: pulse }] }]} />
               <Text style={styles.logoBall}>⚽</Text>
               <Text style={styles.logoText}>Bolão</Text>
               <Text style={styles.logoNumber}>10</Text>
@@ -165,9 +199,7 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.welcomeBox}>
-            <Text style={styles.welcomeTitle}>
-              Olá, {user?.nome || "Jogador"}! 👋
-            </Text>
+            <Text style={styles.welcomeTitle}>Olá, {user?.nome || "Jogador"}! 👋</Text>
             <Text style={styles.welcomeText}>Que comece o bolão!</Text>
           </View>
 
@@ -176,153 +208,139 @@ export default function HomeScreen() {
           <View style={styles.heroDecorThree} />
         </View>
 
-        <View style={styles.gameCard}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>PRÓXIMO JOGO</Text>
+        {/* LOADING DO JOGO */}
+        {loadingJogo ? (
+          <View style={[styles.gameCard, { paddingVertical: 40 }]}>
+            <ActivityIndicator size="large" color="#006B2E" />
+            <Text style={{ marginTop: 10, color: '#6B7280', fontWeight: 'bold' }}>Buscando o próximo grande jogo...</Text>
           </View>
-
-          <Text style={styles.gameTitle}>Brasil x Argentina</Text>
-
-          <View style={styles.teamsRow}>
-            <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-              {/* BANDEIRA BRASIL CIRCULAR */}
-              <Image 
-                source={{ uri: "https://flagcdn.com/w320/br.png" }} 
-                style={styles.flagImage} 
-              />
-              <Text style={styles.teamName}>BRASIL</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.vs}>X</Text>
-
-            <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-              {/* BANDEIRA ARGENTINA CIRCULAR */}
-              <Image 
-                source={{ uri: "https://flagcdn.com/w320/ar.png" }} 
-                style={styles.flagImage} 
-              />
-              <Text style={styles.teamName}>ARGENTINA</Text>
-            </TouchableOpacity>
+        ) : !proximoJogo ? (
+          /* CASO NÃO HAJA JOGOS ABERTOS (CADEADO) */
+          <View style={[styles.gameCard, { paddingVertical: 40 }]}>
+             <Text style={{ fontSize: 50, marginBottom: 10 }}>🔒</Text>
+             <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Nenhum jogo aberto</Text>
+             <Text style={{ color: "#6B7280", textAlign: "center", marginTop: 6, paddingHorizontal: 20 }}>
+               As apostas estão fechadas no momento ou não há jogos programados.
+             </Text>
           </View>
+        ) : (
+          /* RENDERIZA O PRIMEIRO JOGO DINÂMICO ENCONTRADO */
+          <>
+            <View style={styles.gameCard}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>PRÓXIMO JOGO</Text>
+              </View>
 
-          <View style={styles.gameInfo}>
-            <Text style={styles.infoText}>📅 21/06/2026</Text>
-            <Text style={styles.infoText}>🕘 21:00</Text>
-          </View>
+              <Text style={styles.gameTitle}>{proximoJogo.timeCasa.nome} x {proximoJogo.timeFora.nome}</Text>
 
-          <View style={styles.priceBox}>
-            <Text style={styles.priceText}>💸 Entrada: R$ 10,00</Text>
-          </View>
-        </View>
+              <View style={styles.teamsRow}>
+                <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
+                  <Image source={{ uri: proximoJogo.timeCasa.bandeira }} style={styles.flagImage} />
+                  <Text style={styles.teamName}>{proximoJogo.timeCasa.sigla}</Text>
+                </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>Em quem você acha que vence?</Text>
+                <Text style={styles.vs}>X</Text>
 
-        <View style={styles.buttonsRow}>
-          <TouchableOpacity
-            style={[styles.betButton, styles.brazilButton]}
-            onPress={irParaAposta}
-          >
-            <Text style={styles.betIcon}>🇧🇷</Text>
-            <Text style={styles.betButtonText}>BRASIL</Text>
-          </TouchableOpacity>
+                <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
+                  <Image source={{ uri: proximoJogo.timeFora.bandeira }} style={styles.flagImage} />
+                  <Text style={styles.teamName}>{proximoJogo.timeFora.sigla}</Text>
+                </TouchableOpacity>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.betButton, styles.argentinaButton]}
-            onPress={irParaAposta}
-          >
-            <Text style={styles.betIcon}>🇦🇷</Text>
-            <Text style={styles.betButtonText}>ARGENTINA</Text>
-          </TouchableOpacity>
-        </View>
+              <View style={styles.gameInfo}>
+                <Text style={styles.infoText}>📅 {proximoJogo.data}</Text>
+                <Text style={styles.infoText}>🕘 {proximoJogo.horario}</Text>
+              </View>
 
-        {participantes > 0 && (
-          <View style={styles.liveBox}>
-            <View style={styles.liveHeader}>
-              <Text style={styles.liveTitle}>AO VIVO NO BOLÃO</Text>
-              <View style={styles.liveBadge}>
-                <Text style={styles.liveBadgeText}>● AO VIVO</Text>
+              <View style={styles.priceBox}>
+                <Text style={styles.priceText}>💸 Entrada: R$ {VALOR_APOSTA},00</Text>
               </View>
             </View>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                <Text style={styles.statIcon}>👥</Text>
-                <Text style={styles.statNumber}>{participantes}</Text>
-                <Text style={styles.statLabel}>pessoas apostando</Text>
+            <Text style={styles.sectionTitle}>Em quem você acha que vence?</Text>
+
+            <View style={styles.buttonsRow}>
+              <TouchableOpacity style={[styles.betButton, { backgroundColor: "#E6F4EA" }]} onPress={irParaAposta}>
+                <Image source={{ uri: proximoJogo.timeCasa.bandeira }} style={styles.btnFlagImage} />
+                <Text style={styles.betButtonText}>{proximoJogo.timeCasa.sigla}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.betButton, { backgroundColor: "#EEF2FF" }]} onPress={irParaAposta}>
+                <Image source={{ uri: proximoJogo.timeFora.bandeira }} style={styles.btnFlagImage} />
+                <Text style={styles.betButtonText}>{proximoJogo.timeFora.sigla}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* A REGRA {participantes > 0} FOI REMOVIDA DAQUI. AGORA SEMPRE MOSTRA! */}
+            <View style={styles.liveBox}>
+              <View style={styles.liveHeader}>
+                <Text style={styles.liveTitle}>AO VIVO NO BOLÃO</Text>
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveBadgeText}>● AO VIVO</Text>
+                </View>
               </View>
 
-              <View style={styles.statCard}>
-                <Text style={styles.statIcon}>🪙</Text>
-                <Text style={styles.statNumber}>{totalBolao}</Text>
-                <Text style={styles.statLabel}>BRL acumulado</Text>
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statIcon}>👥</Text>
+                  <Text style={styles.statNumber}>{participantes}</Text>
+                  <Text style={styles.statLabel}>pessoas apostando</Text>
+                </View>
+
+                <View style={styles.statCard}>
+                  <Text style={styles.statIcon}>🪙</Text>
+                  <Text style={styles.statNumber}>{totalBolao}</Text>
+                  <Text style={styles.statLabel}>BRL acumulado</Text>
+                </View>
               </View>
             </View>
-          </View>
+          </>
         )}
 
         <View style={styles.bottomSpace} />
       </ScrollView>
 
+      {/* MENU INFERIOR */}
       <View style={styles.bottomMenu}>
         <TouchableOpacity style={styles.menuItemActive}>
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuTextActive}>Início</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/apostar")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/apostar")}>
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/bolao")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/bolao")}>
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/ranking")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/ranking")}>
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
         </TouchableOpacity>
 
-        {/* BOTÃO GERENCIAR ADICIONADO AQUI, SEPARADO DO PERFIL */}
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/gerenciar")}
-        >
-          <Text style={styles.menuIcon}>⚙️</Text>
-          <Text style={styles.menuText}>Gerenciar</Text>
-        </TouchableOpacity>
+        {user?.email === "admin@bolao.com" && (
+          <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/gerenciar")}>
+            <Text style={styles.menuIcon}>⚙️</Text>
+            <Text style={styles.menuText}>Gerenciar</Text>
+          </TouchableOpacity>
+        )}
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/perfil")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/perfil")}>
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
       </View> 
 
-      {/* MODAL DE NOTIFICAÇÃO ADICIONADO AQUI */}
-      <Modal
-        visible={mostrarNotificacao}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={fecharNotificacao}
-      >
+      {/* MODAL DE NOTIFICAÇÕES */}
+      <Modal visible={mostrarNotificacao} transparent={true} animationType="fade" onRequestClose={fecharNotificacao}>
         <Pressable style={styles.modalOverlay} onPress={fecharNotificacao}>
           <Pressable style={styles.modalContent}>
             <View style={styles.notificationHeader}>
               <Text style={styles.notificationTitle}>🔔 Notificações</Text>
-
               <TouchableOpacity onPress={fecharNotificacao}>
                 <Text style={styles.notificationClose}>✕</Text>
               </TouchableOpacity>
@@ -330,36 +348,16 @@ export default function HomeScreen() {
 
             {!notificacao ? (
               <View style={styles.emptyNotification}>
-                <Text style={styles.emptyNotificationText}>
-                  Nenhuma notificação no momento.
-                </Text>
+                <Text style={styles.emptyNotificationText}>Nenhuma notificação no momento.</Text>
               </View>
             ) : (
-              <View
-                style={[
-                  styles.notificationContent,
-                  notificacao.venceu
-                    ? styles.notificationWin
-                    : styles.notificationLose,
-                ]}
-              >
-                <Text style={styles.notificationGame}>
-                  🏆 Resultado do Bolão
-                </Text>
-
-                <Text style={styles.notificationMessage}>
-                  {notificacao.mensagem}
-                </Text>
-
+              <View style={[styles.notificationContent, notificacao.venceu ? styles.notificationWin : styles.notificationLose]}>
+                <Text style={styles.notificationGame}>🏆 Resultado do Bolão</Text>
+                <Text style={styles.notificationMessage}>{notificacao.mensagem}</Text>
                 {notificacao.venceu && (
-                  <Text style={styles.notificationPrize}>
-                    💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}
-                  </Text>
+                  <Text style={styles.notificationPrize}>💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}</Text>
                 )}
-
-                <Text style={styles.notificationHint}>
-                  Toque fora do card ou no ✕ para fechar.
-                </Text>
+                <Text style={styles.notificationHint}>Toque fora do card ou no ✕ para fechar.</Text>
               </View>
             )}
           </Pressable>
@@ -375,16 +373,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F3F6F4",
   },
-
   container: {
     flex: 1,
     backgroundColor: "#F3F6F4",
   },
-
   content: {
     paddingBottom: 110,
   },
-
   hero: {
     backgroundColor: "#006B2E",
     paddingHorizontal: 18,
@@ -394,24 +389,20 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 26,
     overflow: "hidden",
   },
-
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-
   menuIconTop: {
     color: "#FFFFFF",
     fontSize: 25,
     fontWeight: "900",
   },
-
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
   },
-
   liveDot: {
     width: 9,
     height: 9,
@@ -419,19 +410,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#00FF66",
     marginRight: 7,
   },
-
   logoBall: {
     fontSize: 24,
     marginRight: 4,
   },
-
   logoText: {
     color: "#FFFFFF",
     fontSize: 24,
     fontWeight: "900",
     fontStyle: "italic",
   },
-
   logoNumber: {
     color: "#FFD500",
     fontSize: 25,
@@ -439,7 +427,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginLeft: 4,
   },
-
   bellBox: {
     width: 34,
     height: 34,
@@ -447,11 +434,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
   },
-
   bell: {
     fontSize: 20,
   },
-
   redDot: {
     position: "absolute",
     right: 5,
@@ -461,96 +446,20 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: "#EF4444",
   },
-
   welcomeBox: {
     marginTop: 22,
   },
-
   welcomeTitle: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "900",
   },
-
   welcomeText: {
     color: "#DFFFEA",
     fontSize: 14,
     fontWeight: "700",
     marginTop: 3,
   },
-
-  notificationHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  notificationTitle: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  notificationClose: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#6B7280",
-  },
-
-  notificationContent: {
-    marginTop: 12,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-  },
-
-  notificationWin: {
-    backgroundColor: "#FFF6BF",
-    borderColor: "#FFD500",
-  },
-
-  notificationLose: {
-    backgroundColor: "#FEE2E2",
-    borderColor: "#FCA5A5",
-  },
-
-  notificationGame: {
-    color: "#006B2E",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
-  notificationMessage: {
-    marginTop: 8,
-    color: "#374151",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  notificationPrize: {
-    marginTop: 10,
-    color: "#059669",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  notificationHint: {
-    color: "#6B7280",
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 8,
-  },
-
-  emptyNotification: {
-    paddingVertical: 15,
-  },
-
-  emptyNotificationText: {
-    color: "#6B7280",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
   heroDecorOne: {
     position: "absolute",
     width: 140,
@@ -560,7 +469,6 @@ const styles = StyleSheet.create({
     right: -45,
     bottom: -45,
   },
-
   heroDecorTwo: {
     position: "absolute",
     width: 90,
@@ -570,7 +478,6 @@ const styles = StyleSheet.create({
     left: -30,
     bottom: -25,
   },
-
   heroDecorThree: {
     position: "absolute",
     width: 160,
@@ -581,7 +488,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 80,
     borderTopRightRadius: 80,
   },
-
   gameCard: {
     backgroundColor: "#FFFFFF",
     marginHorizontal: 18,
@@ -591,7 +497,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 6,
   },
-
   badge: {
     backgroundColor: "#FFD500",
     paddingHorizontal: 18,
@@ -599,65 +504,62 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: 10,
   },
-
   badgeText: {
     color: "#0B3D1C",
     fontWeight: "900",
     fontSize: 11,
   },
-
   gameTitle: {
-    fontSize: 23,
+    fontSize: 21,
     fontWeight: "900",
     color: "#111827",
     marginBottom: 15,
+    textAlign: "center"
   },
-
   teamsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 24,
   },
-
   teamBox: {
     alignItems: "center",
   },
-
   flagImage: {
     width: 66,
     height: 66,
     borderRadius: 33,
-    resizeMode: "cover",
+    resizeMode: "contain",
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-
+  btnFlagImage: {
+    width: 44,
+    height: 44,
+    marginBottom: 6,
+    resizeMode: "contain"
+  },
   teamName: {
     marginTop: 8,
     fontSize: 12,
     fontWeight: "900",
     color: "#111827",
   },
-
   vs: {
     fontSize: 30,
     fontWeight: "900",
     color: "#111827",
   },
-
   gameInfo: {
     flexDirection: "row",
     gap: 15,
     marginTop: 16,
   },
-
   infoText: {
     color: "#4B5563",
     fontSize: 13,
     fontWeight: "700",
   },
-
   priceBox: {
     marginTop: 15,
     width: "100%",
@@ -668,13 +570,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
   },
-
   priceText: {
     color: "#006B2E",
     fontWeight: "900",
     fontSize: 14,
   },
-
   sectionTitle: {
     marginHorizontal: 20,
     marginTop: 22,
@@ -683,13 +583,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#111827",
   },
-
   buttonsRow: {
     flexDirection: "row",
     marginHorizontal: 20,
     gap: 14,
   },
-
   betButton: {
     flex: 1,
     height: 94,
@@ -698,26 +596,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     elevation: 3,
   },
-
-  brazilButton: {
-    backgroundColor: "#FFD500",
-  },
-
-  argentinaButton: {
-    backgroundColor: "#DDEBFF",
-  },
-
-  betIcon: {
-    fontSize: 34,
-    marginBottom: 6,
-  },
-
   betButtonText: {
     fontSize: 15,
     fontWeight: "900",
     color: "#111827",
   },
-
   liveBox: {
     backgroundColor: "#005C28",
     marginHorizontal: 20,
@@ -726,38 +609,32 @@ const styles = StyleSheet.create({
     padding: 17,
     elevation: 4,
   },
-
   liveHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   liveTitle: {
     color: "#FFD500",
     fontSize: 14,
     fontWeight: "900",
   },
-
   liveBadge: {
     backgroundColor: "#00B050",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
   },
-
   liveBadgeText: {
     color: "#FFFFFF",
     fontSize: 10,
     fontWeight: "900",
   },
-
   statsRow: {
     flexDirection: "row",
     gap: 12,
     marginTop: 14,
   },
-
   statCard: {
     flex: 1,
     backgroundColor: "#007A35",
@@ -767,18 +644,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
   },
-
   statIcon: {
     fontSize: 27,
   },
-
   statNumber: {
     color: "#FFFFFF",
     fontSize: 29,
     fontWeight: "900",
     marginTop: 4,
   },
-
   statLabel: {
     color: "#DFFFEA",
     fontSize: 11,
@@ -786,11 +660,9 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontWeight: "700",
   },
-
   bottomSpace: {
     height: 110,
   },
-
   bottomMenu: {
     position: "absolute",
     bottom: 0,
@@ -805,44 +677,37 @@ const styles = StyleSheet.create({
     borderTopColor: "#E5E7EB",
     paddingBottom: 10,
   },
-
   menuItem: {
     alignItems: "center",
     justifyContent: "center",
     flex: 1,
   },
-
   menuItemActive: {
     alignItems: "center",
     justifyContent: "center",
     flex: 1,
   },
-
   menuIcon: {
     fontSize: 22,
   },
-
   menuText: {
     fontSize: 11,
     color: "#6B7280",
     marginTop: 3,
     fontWeight: "700",
   },
-
   menuTextActive: {
     fontSize: 11,
     color: "#00A344",
     marginTop: 3,
     fontWeight: "900",
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
-
   modalContent: {
     width: "85%",
     backgroundColor: "#FFFFFF",
@@ -853,5 +718,65 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
+  },
+  notificationHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  notificationTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  notificationClose: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#6B7280",
+  },
+  notificationContent: {
+    marginTop: 12,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+  },
+  notificationWin: {
+    backgroundColor: "#FFF6BF",
+    borderColor: "#FFD500",
+  },
+  notificationLose: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+  },
+  notificationGame: {
+    color: "#006B2E",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  notificationMessage: {
+    marginTop: 8,
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  notificationPrize: {
+    marginTop: 10,
+    color: "#059669",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  notificationHint: {
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 8,
+  },
+  emptyNotification: {
+    paddingVertical: 15,
+  },
+  emptyNotificationText: {
+    color: "#6B7280",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

@@ -62,8 +62,9 @@ type AuthContextData = {
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
-const ADMIN_EMAIL = "admin@bolao.com";
-const ADMIN_SENHA = "admin123";
+// 👇 Credenciais originais de Admin restauradas
+const ADMIN_EMAIL = "adminpalpite10@gmail.com";
+const ADMIN_SENHA = "PalpiteDG@1533";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<LoggedUser | null>(null);
@@ -71,25 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   function formatarUsuario(id: string, data: any): User {
+    const isMasterAdmin = data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    
     return {
       uid: id,
       nome: data.nome || "",
       email: data.email || "",
       senha: "",
       saldo: Number(data.saldo || 0),
-      role: data.role || "user",
+      role: isMasterAdmin ? "admin" : (data.role || "user"),
       banido: data.banido || false,
     };
   }
 
   async function buscarUsuarioPorEmail(email: string) {
     const usuariosRef = collection(db, "users");
-
-    const q = query(
-      usuariosRef,
-      where("emailLower", "==", email.toLowerCase())
-    );
-
+    const q = query(usuariosRef, where("emailLower", "==", email.toLowerCase()));
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
@@ -97,7 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const documento = snapshot.docs[0];
-
     return {
       id: documento.id,
       data: documento.data(),
@@ -136,12 +133,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Este usuário foi banido do bolão.");
     }
 
+    const isMasterAdmin = data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
     const usuarioLogado: LoggedUser = {
       uid,
       nome: data.nome || "",
       email: data.email || "",
       saldo: Number(data.saldo || 0),
-      role: data.role || "user",
+      // 👇 MÁGICA AQUI: Força a carteirada de admin para o seu e-mail
+      role: isMasterAdmin ? "admin" : (data.role || "user"),
       banido: data.banido || false,
     };
 
@@ -150,7 +150,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function carregarUsuarios() {
     const snapshot = await getDocs(collection(db, "users"));
-
     const lista = snapshot.docs.map((documento) =>
       formatarUsuario(documento.id, documento.data())
     );
@@ -165,73 +164,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-  let unsubscribeUsuario: (() => void) | undefined;
+    let unsubscribeUsuario: (() => void) | undefined;
 
-  const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-    if (unsubscribeUsuario) {
-      unsubscribeUsuario();
-    }
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubscribeUsuario) {
+        unsubscribeUsuario();
+      }
 
-    if (!firebaseUser) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
+      if (!firebaseUser) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
 
-    const usuarioRef = doc(db, "users", firebaseUser.uid);
+      const usuarioRef = doc(db, "users", firebaseUser.uid);
 
-    unsubscribeUsuario = onSnapshot(
-      usuarioRef,
-      async (documento) => {
-        try {
-          if (!documento.exists()) {
-            await signOut(auth);
-            setUser(null);
+      unsubscribeUsuario = onSnapshot(
+        usuarioRef,
+        async (documento) => {
+          try {
+            if (!documento.exists()) {
+              await signOut(auth);
+              setUser(null);
+              setLoading(false);
+              return;
+            }
+
+            const data = documento.data();
+
+            if (data.banido) {
+              await signOut(auth);
+              setUser(null);
+              setLoading(false);
+              return;
+            }
+
+            const isMasterAdmin = data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+            const usuarioAtualizado: LoggedUser = {
+              uid: firebaseUser.uid,
+              nome: data.nome || "",
+              email: data.email || "",
+              saldo: Number(data.saldo || 0),
+              // 👇 MÁGICA AQUI TAMBÉM: Garante a role de admin no tempo real
+              role: isMasterAdmin ? "admin" : (data.role || "user"),
+              banido: data.banido || false,
+            };
+
+            setUser(usuarioAtualizado);
+            await carregarUsuarios();
             setLoading(false);
-            return;
-          }
-
-          const data = documento.data();
-
-          if (data.banido) {
-            await signOut(auth);
-            setUser(null);
+          } catch (error) {
+            console.log("Erro ao atualizar usuário em tempo real:", error);
             setLoading(false);
-            return;
           }
-
-          const usuarioAtualizado: LoggedUser = {
-            uid: firebaseUser.uid,
-            nome: data.nome || "",
-            email: data.email || "",
-            saldo: Number(data.saldo || 0),
-            role: data.role || "user",
-            banido: data.banido || false,
-          };
-
-          setUser(usuarioAtualizado);
-          await carregarUsuarios();
-          setLoading(false);
-        } catch (error) {
-          console.log("Erro ao atualizar usuário em tempo real:", error);
+        },
+        (error) => {
+          console.log("Erro no listener do usuário:", error);
           setLoading(false);
         }
-      },
-      (error) => {
-        console.log("Erro no listener do usuário:", error);
-        setLoading(false);
+      );
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUsuario) {
+        unsubscribeUsuario();
       }
-    );
-  });
-
-  return () => {
-    unsubscribeAuth();
-
-    if (unsubscribeUsuario) {
-      unsubscribeUsuario();
-    }
-  };
-}, []);
+    };
+  }, []);
 
   async function login(email: string, senha: string) {
     if (!email || !senha) {
@@ -249,7 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await carregarUsuarios();
     } catch (error: any) {
       if (
-        email.toLowerCase() === ADMIN_EMAIL &&
+        email.toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
         senha === ADMIN_SENHA
       ) {
         try {
@@ -261,7 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           await criarPerfilUsuario(
             response.user.uid,
-            "Administrador",
+            "Administrador Master",
             ADMIN_EMAIL,
             "admin"
           );
@@ -308,11 +309,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error.code === "auth/email-already-in-use") {
         throw new Error("Este e-mail já está cadastrado.");
       }
-
       if (error.code === "auth/invalid-email") {
         throw new Error("E-mail inválido.");
       }
-
       throw new Error("Erro ao cadastrar usuário.");
     }
   }
@@ -347,7 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const dados = usuarioEncontrado.data;
 
-    if (dados.role === "admin") {
+    if (dados.role === "admin" || email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
       throw new Error("Não é possível banir o administrador.");
     }
 
