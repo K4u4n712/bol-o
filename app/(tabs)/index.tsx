@@ -309,7 +309,7 @@ export default function HomeScreen() {
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
-      </View>
+      </View> 
 
       {/* MODAL DE NOTIFICAÇÃO ADICIONADO AQUI */}
       <Modal

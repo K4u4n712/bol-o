@@ -7,11 +7,14 @@ import {
   Switch,
   Image,
   StatusBar,
-  ActivityIndicator
+  ActivityIndicator,
+  TouchableOpacity
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
+import { db } from '../../services/firebaseConfig';
+import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
 
 export default function GerenciarApostasScreen() {
   const { user } = useAuth();
@@ -20,20 +23,31 @@ export default function GerenciarApostasScreen() {
   const [loading, setLoading] = useState(true);
 
   // 1. TRAVA DE SEGURANÇA: Apenas administradores podem acessar
-  // Substitua o email abaixo pelo email de vocês
+  // Substitua o email abaixo pelo seu email real de admin
   if (user?.email !== "admin@bolao.com") {
     return <Redirect href="/" />;
   }
 
-  // 3. PUXAR DADOS DA ESPN
+  // 2. PUXAR DADOS DA ESPN (Com filtros de data e Firebase)
   useEffect(() => {
     const buscarJogos = async () => {
       try {
-        const response = await fetch('https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard');
-        const data = await response.json();
-
         const agora = new Date();
         const limite48h = new Date(agora.getTime() + (48 * 60 * 60 * 1000));
+
+        // Formata a data para YYYYMMDD (padrão exigido pela API da ESPN)
+        const fData = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(agora)}-${fData(limite48h)}`;
+
+        const response = await fetch(urlESPN);
+        const data = await response.json();
+
+        // Busca o status salvo no Firebase para saber se o Admin já fechou alguma aposta
+        const statusSnapshot = await getDocs(collection(db, "status_apostas"));
+        const statusFirebase: Record<string, boolean> = {};
+        statusSnapshot.forEach(docSnap => {
+          statusFirebase[docSnap.id] = docSnap.data().aberta;
+        });
 
         const jogosFiltrados = data.events.reduce((acc: any[], event: any) => {
           const dataJogo = new Date(event.date);
@@ -45,7 +59,7 @@ export default function GerenciarApostasScreen() {
           // Não mostrar jogos além de 48 horas no futuro
           if (dataJogo > limite48h) return acc;
 
-          // Sumir com o jogo 30 min (aprox) após terminar
+          // Sumir com o jogo 30 min (aprox) após terminar (9.000.000 ms)
           if (status === 'post') {
             const tempoDesdeInicio = agora.getTime() - dataJogo.getTime();
             if (tempoDesdeInicio > 9000000) {
@@ -56,6 +70,9 @@ export default function GerenciarApostasScreen() {
           let statusBR = 'AGENDADO';
           if (status === 'in') statusBR = 'AO_VIVO';
           if (status === 'post') statusBR = 'FINALIZADO';
+
+          // Checa se já existe um registro no Firebase forçando a abertura/fechamento
+          const jaTemStatusNoFirebase = statusFirebase[event.id] !== undefined;
 
           acc.push({
             id: event.id,
@@ -74,7 +91,8 @@ export default function GerenciarApostasScreen() {
               sigla: timeFora.team.abbreviation, 
               bandeira: timeFora.team.logo || 'https://via.placeholder.com/50' 
             },
-            apostasAbertas: status === 'pre', // 2. Lógica nova: só abre automaticamente os que não começaram
+            // Se o admin mexeu, usa do Firebase. Se não, usa o padrão da ESPN ('pre' = aberto)
+            apostasAbertas: jaTemStatusNoFirebase ? statusFirebase[event.id] : (status === 'pre'),
             totalApostas: 0,
           });
 
@@ -84,21 +102,35 @@ export default function GerenciarApostasScreen() {
         setJogos(jogosFiltrados);
         setLoading(false);
       } catch (error) {
-        console.error("Erro ao buscar jogos da ESPN:", error);
+        console.error("Erro ao buscar jogos:", error);
         setLoading(false);
       }
     };
 
     buscarJogos();
-    const interval = setInterval(buscarJogos, 60000); // Atualiza placar a cada minuto
+    const interval = setInterval(buscarJogos, 60000); // Atualiza placar e dados a cada 1 min
     return () => clearInterval(interval);
   }, []);
 
-  // 2. LÓGICA DO TOGGLE CORRIGIDA (Apostas Abertas)
-  const toggleApostas = (id: string) => {
+  // 3. PERSISTIR LÓGICA DO TOGGLE NO FIREBASE
+  const toggleApostas = async (id: string) => {
+    const jogoAtual = jogos.find(j => j.id === id);
+    if (!jogoAtual) return;
+    
+    const novoStatus = !jogoAtual.apostasAbertas;
+
+    // Atualiza a interface instantaneamente para o usuário não sentir travamento
     setJogos(jogos.map(jogo => 
-      jogo.id === id ? { ...jogo, apostasAbertas: !jogo.apostasAbertas } : jogo
+      jogo.id === id ? { ...jogo, apostasAbertas: novoStatus } : jogo
     ));
+
+    // Salva a decisão no banco de dados
+    try {
+      const jogoRef = doc(db, "status_apostas", id.toString());
+      await setDoc(jogoRef, { aberta: novoStatus }, { merge: true });
+    } catch (error) {
+      console.error("Erro ao salvar no Firebase:", error);
+    }
   };
 
   const renderCardJogo = ({ item }: { item: any }) => {
@@ -195,6 +227,39 @@ export default function GerenciarApostasScreen() {
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* 4. MENU INFERIOR REINSERIDO */}
+      <View style={styles.bottomMenu}>
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
+          <Text style={styles.menuIcon}>🏠</Text>
+          <Text style={styles.menuText}>Início</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/apostar")}>
+          <Text style={styles.menuIcon}>🎯</Text>
+          <Text style={styles.menuText}>Apostar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/bolao")}>
+          <Text style={styles.menuIcon}>👥</Text>
+          <Text style={styles.menuText}>Bolão</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/ranking")}>
+          <Text style={styles.menuIcon}>🏆</Text>
+          <Text style={styles.menuText}>Ranking</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItemActive}>
+          <Text style={styles.menuIcon}>⚙️</Text>
+          <Text style={styles.menuTextActive}>Gerenciar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/perfil")}>
+          <Text style={styles.menuIcon}>👤</Text>
+          <Text style={styles.menuText}>Perfil</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -375,5 +440,46 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '600',
     marginLeft: 10,
-  }
+  },
+  
+  // ESTILOS DO MENU INFERIOR
+  bottomMenu: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 78,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    paddingBottom: 10,
+  },
+  menuItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  menuItemActive: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  menuIcon: {
+    fontSize: 22,
+  },
+  menuText: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 3,
+    fontWeight: "700",
+  },
+  menuTextActive: {
+    fontSize: 11,
+    color: "#00A344",
+    marginTop: 3,
+    fontWeight: "900",
+  },
 });
