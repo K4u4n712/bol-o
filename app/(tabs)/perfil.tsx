@@ -17,7 +17,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { db } from "../../services/firebaseConfig";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 
-const CHECKOUT_INFINITEPAY_URL = "https://checkout.infinitepay.io/pitstoplanchepizzariaa/IAwmKpIHgH";
+const CHECKOUT_INFINITEPAY_URL = "https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41";
 
 type PerfilStats = {
   totalPalpites: number;
@@ -173,7 +173,7 @@ export default function PerfilScreen() {
       return;
     }
 
-    if (CHECKOUT_INFINITEPAY_URL.includes("COLE_AQUI")) {
+    if (CHECKOUT_INFINITEPAY_URL.includes("https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41")) {
       mostrarAlerta(
         "Link não configurado",
         "Cole o link do checkout da InfinitePay no código."
@@ -183,7 +183,11 @@ export default function PerfilScreen() {
 
     setModalDeposito(false);
 
-    const abriu = await Linking.openURL(CHECKOUT_INFINITEPAY_URL);
+    const identificadorUsuario = user?.uid || user?.email?.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const urlComTracking = `${CHECKOUT_INFINITEPAY_URL}?reference_id=${identificadorUsuario}&amount=${valor}`;
+    
+
+    const abriu = await Linking.openURL(urlComTracking);
 
     if (!abriu) {
       mostrarAlerta("Erro", "Não foi possível abrir o checkout.");
