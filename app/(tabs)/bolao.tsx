@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { db } from "../../services/firebaseConfig";
 import {
   collection,
+  getDocs,
   onSnapshot,
   query,
   where,
@@ -12,11 +13,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Animated,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Aposta = {
   id?: string;
@@ -29,20 +30,44 @@ type Aposta = {
   atualizadoEm?: any;
 };
 
-const JOGO_ID = "brasil-argentina-2026";
+type Jogo = {
+  id: string;
+  data: string;
+  horario: string;
+  status: string;
+  timeCasa: {
+    nome: string;
+    sigla: string;
+    bandeira: string;
+  };
+  timeFora: {
+    nome: string;
+    sigla: string;
+    bandeira: string;
+  };
+};
+
+const VALOR_APOSTA = 10;
 
 export default function BolaoScreen() {
   const [apostas, setApostas] = useState<Aposta[]>([]);
+  const [jogoAtual, setJogoAtual] = useState<Jogo | null>(null);
+  const [carregandoJogo, setCarregandoJogo] = useState(true);
+
   const pulse = useRef(new Animated.Value(1)).current;
 
-  const valorAposta = 10;
   const totalParticipantes = apostas.length;
+
   const totalBolao = apostas.reduce((total, item) => {
-    return total + Number(item.valor || valorAposta);
+    return total + Number(item.valor || VALOR_APOSTA);
   }, 0);
 
+  const nomeJogoAtual = jogoAtual
+    ? `${jogoAtual.timeCasa.nome} x ${jogoAtual.timeFora.nome}`
+    : "Nenhum jogo aberto";
+
   useEffect(() => {
-    Animated.loop(
+    const animacao = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 0.25,
@@ -55,13 +80,126 @@ export default function BolaoScreen() {
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+
+    animacao.start();
+
+    return () => animacao.stop();
   }, []);
 
   useEffect(() => {
+    async function buscarJogoAtual() {
+      try {
+        const agora = new Date();
+        const limite48h = new Date(agora.getTime() + 48 * 60 * 60 * 1000);
+
+        const fData = (d: Date) =>
+          `${d.getFullYear()}${String(d.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}${String(d.getDate()).padStart(2, "0")}`;
+
+        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(
+          agora
+        )}-${fData(limite48h)}`;
+
+        const response = await fetch(urlESPN);
+        const data = await response.json();
+
+        const statusSnapshot = await getDocs(collection(db, "status_apostas"));
+
+        const statusFirebase: Record<string, boolean> = {};
+
+        statusSnapshot.forEach((docSnap) => {
+          statusFirebase[docSnap.id] = docSnap.data().aberta;
+        });
+
+        const jogosFiltrados = (data.events || []).reduce(
+          (acc: Jogo[], event: any) => {
+            const dataJogo = new Date(event.date);
+            const status = event.status?.type?.state;
+
+            const competidores = event.competitions?.[0]?.competitors || [];
+
+            const timeCasa = competidores.find(
+              (c: any) => c.homeAway === "home"
+            );
+
+            const timeFora = competidores.find(
+              (c: any) => c.homeAway === "away"
+            );
+
+            if (!timeCasa || !timeFora) return acc;
+
+            if (dataJogo > limite48h) return acc;
+
+            if (status === "post") return acc;
+
+            const jaTemStatusNoFirebase =
+              statusFirebase[event.id] !== undefined;
+
+            const apostasAbertas = jaTemStatusNoFirebase
+              ? statusFirebase[event.id]
+              : status === "pre";
+
+            if (!apostasAbertas) return acc;
+
+            let statusBR = "AGENDADO";
+            if (status === "in") statusBR = "AO VIVO";
+            if (status === "post") statusBR = "FINALIZADO";
+
+            acc.push({
+              id: event.id,
+              data: dataJogo.toLocaleDateString("pt-BR"),
+              horario: dataJogo.toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+              status: statusBR,
+              timeCasa: {
+                nome: timeCasa.team.displayName,
+                sigla: timeCasa.team.abbreviation,
+                bandeira:
+                  timeCasa.team.logo || "https://via.placeholder.com/50",
+              },
+              timeFora: {
+                nome: timeFora.team.displayName,
+                sigla: timeFora.team.abbreviation,
+                bandeira:
+                  timeFora.team.logo || "https://via.placeholder.com/50",
+              },
+            });
+
+            return acc;
+          },
+          []
+        );
+
+        setJogoAtual(jogosFiltrados[0] || null);
+      } catch (error) {
+        console.log("Erro ao buscar jogo atual:", error);
+        setJogoAtual(null);
+      } finally {
+        setCarregandoJogo(false);
+      }
+    }
+
+    buscarJogoAtual();
+
+    const interval = setInterval(buscarJogoAtual, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!jogoAtual?.id) {
+      setApostas([]);
+      return;
+    }
+
     const apostasRef = collection(db, "apostas");
 
-    const q = query(apostasRef, where("jogoId", "==", JOGO_ID));
+    const q = query(apostasRef, where("jogoId", "==", jogoAtual.id));
 
     const unsubscribe = onSnapshot(
       q,
@@ -74,8 +212,8 @@ export default function BolaoScreen() {
             nome: data.nome || "Usuário",
             email: data.email || "",
             placar: data.placar || "",
-            jogo: data.jogo || "Brasil x Argentina",
-            valor: Number(data.valor || valorAposta),
+            jogo: data.jogo || nomeJogoAtual,
+            valor: Number(data.valor || VALOR_APOSTA),
             criadoEm: data.criadoEm,
             atualizadoEm: data.atualizadoEm,
           };
@@ -84,6 +222,7 @@ export default function BolaoScreen() {
         lista.sort((a, b) => {
           const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
           const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+
           return dataB - dataA;
         });
 
@@ -95,7 +234,7 @@ export default function BolaoScreen() {
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [jogoAtual?.id]);
 
   function pegarMillis(data?: any) {
     if (!data) return 0;
@@ -159,11 +298,22 @@ export default function BolaoScreen() {
         <View style={styles.heroCard}>
           <View style={styles.liveRowTop}>
             <Animated.View style={[styles.liveDot, { opacity: pulse }]} />
-            <Text style={styles.liveTopText}>AO VIVO</Text>
+            <Text style={styles.liveTopText}>
+              {jogoAtual?.status === "AO VIVO" ? "AO VIVO" : "ABERTO"}
+            </Text>
           </View>
 
           <Text style={styles.heroTitle}>Bolão do jogo</Text>
-          <Text style={styles.heroMatch}>🇧🇷 Brasil x Argentina 🇦🇷</Text>
+
+          <Text style={styles.heroMatch}>
+            {carregandoJogo ? "Carregando jogo..." : nomeJogoAtual}
+          </Text>
+
+          {jogoAtual && (
+            <Text style={styles.heroDate}>
+              {jogoAtual.data} • {jogoAtual.horario}
+            </Text>
+          )}
 
           <View style={styles.totalBox}>
             <Text style={styles.totalLabel}>Total acumulado</Text>
@@ -181,7 +331,7 @@ export default function BolaoScreen() {
 
           <View style={styles.statCard}>
             <Text style={styles.statIcon}>🪙</Text>
-            <Text style={styles.statNumber}>{valorAposta}</Text>
+            <Text style={styles.statNumber}>{VALOR_APOSTA}</Text>
             <Text style={styles.statLabel}>BRL por pessoa</Text>
           </View>
         </View>
@@ -196,7 +346,16 @@ export default function BolaoScreen() {
 
         <Text style={styles.sectionTitle}>Participantes do bolão</Text>
 
-        {apostas.length === 0 && (
+        {!carregandoJogo && !jogoAtual && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Nenhum jogo aberto</Text>
+            <Text style={styles.emptyText}>
+              Quando o admin abrir uma aposta, o jogo vai aparecer aqui.
+            </Text>
+          </View>
+        )}
+
+        {jogoAtual && apostas.length === 0 && (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>Nenhum participante ainda</Text>
             <Text style={styles.emptyText}>
@@ -217,7 +376,7 @@ export default function BolaoScreen() {
               <Text style={styles.userName}>{item.nome || "Usuário"}</Text>
 
               <Text style={styles.userBet}>
-                Brasil {item.placar} Argentina
+                {item.jogo || nomeJogoAtual} • {item.placar}
               </Text>
 
               <Text style={styles.userTime}>
@@ -226,7 +385,9 @@ export default function BolaoScreen() {
             </View>
 
             <View style={styles.valueBadge}>
-              <Text style={styles.valueText}>{item.valor || 10} BRL</Text>
+              <Text style={styles.valueText}>
+                {item.valor || VALOR_APOSTA} BRL
+              </Text>
             </View>
           </View>
         ))}
@@ -235,10 +396,7 @@ export default function BolaoScreen() {
       </ScrollView>
 
       <View style={styles.bottomMenu}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => router.push("/")}
-        >
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
         </TouchableOpacity>
@@ -285,7 +443,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: "#006B2E",
     paddingHorizontal: 22,
-    paddingTop: 28,
+    paddingTop: 20,
     paddingBottom: 22,
     flexDirection: "row",
     alignItems: "center",
@@ -368,6 +526,14 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 20,
     fontWeight: "900",
+    marginTop: 8,
+    textAlign: "center",
+  },
+
+  heroDate: {
+    color: "#DFFFEA",
+    fontSize: 14,
+    fontWeight: "800",
     marginTop: 8,
     textAlign: "center",
   },

@@ -1,0 +1,86 @@
+[debug] [2026-06-24T04:16:13.793Z] ----------------------------------------------------------------------
+[debug] [2026-06-24T04:16:13.797Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\kauan\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js login --debug
+[debug] [2026-06-24T04:16:13.797Z] CLI Version:   13.35.1
+[debug] [2026-06-24T04:16:13.797Z] Platform:      win32
+[debug] [2026-06-24T04:16:13.797Z] Node Version:  v24.17.0
+[debug] [2026-06-24T04:16:13.797Z] Time:          Wed Jun 24 2026 01:16:13 GMT-0300 (Horário Padrão de Brasília)
+[debug] [2026-06-24T04:16:13.797Z] ----------------------------------------------------------------------
+[debug] 
+[info] i  Firebase optionally collects CLI and Emulator Suite usage and error reporting information to help improve our products. Data is collected in accordance with Google's privacy policy (https://policies.google.com/privacy) and is not used to identify you.
+ 
+[info] i  To change your data collection preference at any time, run `firebase logout` and log in again. 
+[info] 
+[info] Visit this URL on this device to log in:
+[info] https://accounts.google.com/o/oauth2/auth?client_id=563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com&scope=email%20openid%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloudplatformprojects.readonly%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Ffirebase%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&response_type=code&state=377795049&redirect_uri=http%3A%2F%2Flocalhost%3A9005
+[info] 
+[info] Waiting for authentication...
+[debug] [2026-06-24T04:16:22.432Z] >>> [apiv2][query] POST https://accounts.google.com/o/oauth2/token [none]
+[debug] [2026-06-24T04:16:22.433Z] >>> [apiv2][body] POST https://accounts.google.com/o/oauth2/token [omitted]
+[debug] [2026-06-24T04:16:22.815Z] Token Fetch Error: FirebaseError: FetchError: Invalid response body while trying to fetch https://accounts.google.com/o/oauth2/token: Premature close
+    at RetryOperation._fn (C:\Users\kauan\AppData\Roaming\npm\node_modules\firebase-tools\lib\apiv2.js:296:88)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[debug] [2026-06-24T04:16:22.821Z] >>> [apiv2][query] POST https://auth.firebase.tools/attest [none]
+[debug] [2026-06-24T04:16:22.821Z] >>> [apiv2][body] POST https://auth.firebase.tools/attest {"session_id":"a5751f4f-8577-41ed-a193-009b1d9fe1af"}
+[debug] [2026-06-24T04:16:23.320Z] <<< [apiv2][status] POST https://auth.firebase.tools/attest 200
+[debug] [2026-06-24T04:16:23.321Z] <<< [apiv2][body] POST https://auth.firebase.tools/attest {"token":"G0Q7Az06tiOINhVQRQlpbuabLhn4LMWdKflDoq5Gveg"}
+[info] 
+[info] To sign in to the Firebase CLI:
+[info] 
+[info] 1. Take note of your session ID:
+[info] 
+[info]    A5751
+[info] 
+[info] 2. Visit the URL below on any device and follow the instructions to get your code:
+[info] 
+[info]    https://auth.firebase.tools/login?code_challenge=XImfhHqhWsM-Smq8qYPpi-2i1pI4nambS8ClDQcf5ic&session=a5751f4f-8577-41ed-a193-009b1d9fe1af&attest=G0Q7Az06tiOINhVQRQlpbuabLhn4LMWdKflDoq5Gveg
+[info] 
+[info] 3. Paste or enter the authorization code below once you have it:
+[info] 
+[debug] [2026-06-24T04:16:47.731Z] >>> [apiv2][query] POST https://accounts.google.com/o/oauth2/token [none]
+[debug] [2026-06-24T04:16:47.731Z] >>> [apiv2][body] POST https://accounts.google.com/o/oauth2/token [omitted]
+[debug] [2026-06-24T04:16:47.939Z] Token Fetch Error: FirebaseError: FetchError: Invalid response body while trying to fetch https://accounts.google.com/o/oauth2/token: Premature close
+    at RetryOperation._fn (C:\Users\kauan\AppData\Roaming\npm\node_modules\firebase-tools\lib\apiv2.js:296:88)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[error] 
+[error] Error: Unable to authenticate using the provided code. Please try again.
+[debug] [2026-06-24T04:19:05.476Z] ----------------------------------------------------------------------
+[debug] [2026-06-24T04:19:05.479Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\kauan\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js --debug login --reauth --no-localhost
+[debug] [2026-06-24T04:19:05.480Z] CLI Version:   13.35.1
+[debug] [2026-06-24T04:19:05.480Z] Platform:      win32
+[debug] [2026-06-24T04:19:05.480Z] Node Version:  v24.17.0
+[debug] [2026-06-24T04:19:05.480Z] Time:          Wed Jun 24 2026 01:19:05 GMT-0300 (Horário Padrão de Brasília)
+[debug] [2026-06-24T04:19:05.481Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-24T04:19:05.490Z] >>> [apiv2][query] POST https://auth.firebase.tools/attest [none]
+[debug] [2026-06-24T04:19:05.492Z] >>> [apiv2][body] POST https://auth.firebase.tools/attest {"session_id":"a4dc71c1-7283-46b8-98d7-2a00c90eef49"}
+[debug] [2026-06-24T04:19:05.984Z] <<< [apiv2][status] POST https://auth.firebase.tools/attest 200
+[debug] [2026-06-24T04:19:05.985Z] <<< [apiv2][body] POST https://auth.firebase.tools/attest {"token":"sJZRPIciG0gHQqBuQDx7NjQDuiOGT3EfLCW8sQLzQw8"}
+[info] 
+[info] To sign in to the Firebase CLI:
+[info] 
+[info] 1. Take note of your session ID:
+[info] 
+[info]    A4DC7
+[info] 
+[info] 2. Visit the URL below on any device and follow the instructions to get your code:
+[info] 
+[info]    https://auth.firebase.tools/login?code_challenge=f99oEXde-UW1NlCfdFMgAj37a00m-bkOfB6SwtASmyQ&session=a4dc71c1-7283-46b8-98d7-2a00c90eef49&attest=sJZRPIciG0gHQqBuQDx7NjQDuiOGT3EfLCW8sQLzQw8
+[info] 
+[info] 3. Paste or enter the authorization code below once you have it:
+[info] 
+[debug] [2026-06-24T04:20:58.436Z] >>> [apiv2][query] POST https://accounts.google.com/o/oauth2/token [none]
+[debug] [2026-06-24T04:20:58.436Z] >>> [apiv2][body] POST https://accounts.google.com/o/oauth2/token [omitted]
+[debug] [2026-06-24T04:20:58.893Z] Token Fetch Error: FirebaseError: FetchError: Invalid response body while trying to fetch https://accounts.google.com/o/oauth2/token: Premature close
+    at RetryOperation._fn (C:\Users\kauan\AppData\Roaming\npm\node_modules\firebase-tools\lib\apiv2.js:296:88)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[error] 
+[error] Error: Unable to authenticate using the provided code. Please try again.
