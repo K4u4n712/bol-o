@@ -2,18 +2,7 @@ const { db, admin } = require("../lib/firebaseAdmin");
 
 const INFINITEPAY_HANDLE = "pitstoplanchepizzariaa";
 
-function getBaseUrl(req) {
-  if (process.env.PUBLIC_BASE_URL) {
-    return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
-  }
-
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-
-  const host = req.headers.host;
-  return `https://${host}`;
-}
+const PUBLIC_BASE_URL = "https://bol-o-rouge.vercel.app";
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -70,12 +59,10 @@ module.exports = async function handler(req, res) {
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    const baseUrl = getBaseUrl(req);
-
     const payload = {
       handle: INFINITEPAY_HANDLE,
       redirect_url: "https://google.com",
-      webhook_url: `${baseUrl}/api/webhook-infinitepay`,
+      webhook_url: `${PUBLIC_BASE_URL}/api/webhook-infinitepay`,
       order_nsu: orderNsu,
       customer: {
         name: nome || "Usuário",
