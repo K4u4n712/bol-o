@@ -13,6 +13,8 @@ import {
   Animated,
   FlatList,
   Dimensions,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -83,6 +85,19 @@ export default function BolaoScreen() {
   const [carregandoJogo, setCarregandoJogo] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [agoraTick, setAgoraTick] = useState(Date.now());
+
+  const { width: windowWidth } = useWindowDimensions();
+
+  const cardWidth = useMemo(() => {
+    if (Platform.OS !== "web") {
+      return CARD_WIDTH;
+    }
+
+    const larguraBase = windowWidth || width;
+    const larguraCalculada = larguraBase - 40;
+
+    return Math.max(280, Math.min(larguraCalculada, 390));
+  }, [windowWidth]);
 
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -445,7 +460,7 @@ export default function BolaoScreen() {
   }
 
   function handleScrollEnd(event: any) {
-    const index = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
+    const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
     setCurrentIndex(index);
   }
 
@@ -454,7 +469,7 @@ export default function BolaoScreen() {
     const tempoInfo = getInfoTempoJogo(item);
 
     return (
-      <View style={styles.carouselSlide}>
+      <View style={[styles.carouselSlide, { width: cardWidth }]}>
         <View style={styles.heroCard}>
           <View style={styles.liveRowTop}>
             <Animated.View
@@ -569,6 +584,11 @@ export default function BolaoScreen() {
               keyExtractor={(item) => item.id}
               horizontal
               pagingEnabled
+              style={
+                Platform.OS === "web"
+                  ? { width: cardWidth, alignSelf: "center" }
+                  : undefined
+              }
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={handleScrollEnd}
               renderItem={renderBolaoCard}
@@ -755,7 +775,7 @@ const styles = StyleSheet.create({
   },
 
   carouselSlide: {
-    width: CARD_WIDTH,
+    overflow: "hidden",
   },
 
   heroCard: {
@@ -764,6 +784,13 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: "center",
     elevation: 5,
+    ...(Platform.OS === "web"
+      ? {
+          width: "100%",
+          maxWidth: 390,
+          overflow: "hidden",
+        }
+      : {}),
   },
 
   liveRowTop: {
@@ -795,6 +822,7 @@ const styles = StyleSheet.create({
     fontSize: 33,
     fontWeight: "900",
     textAlign: "center",
+    flexShrink: 1,
   },
 
   heroMatch: {
@@ -803,6 +831,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 8,
     textAlign: "center",
+    flexShrink: 1,
   },
 
   heroDate: {
@@ -902,6 +931,8 @@ const styles = StyleSheet.create({
     fontSize: 54,
     fontWeight: "900",
     marginTop: 6,
+    textAlign: "center",
+    flexShrink: 1,
   },
 
   totalSub: {
