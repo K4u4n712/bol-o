@@ -94,7 +94,6 @@ export default function AdminScreen() {
     user,
     users,
     carregarUsuarios,
-    atualizarSaldoUsuario,
     banirUsuario,
   } = useAuth();
 
@@ -116,6 +115,16 @@ export default function AdminScreen() {
   const [saldosEditados, setSaldosEditados] = useState<Record<string, string>>(
     {}
   );
+
+  const [saldosUsers, setSaldosUsers] = useState<any>({
+    porEmail: {},
+    porUid: {},
+  });
+
+  const [saldosUsuarios, setSaldosUsuarios] = useState<any>({
+    porEmail: {},
+    porUid: {},
+  });
 
   const [agoraTick, setAgoraTick] = useState(Date.now());
   const [processandoIds, setProcessandoIds] = useState<Record<string, boolean>>(
@@ -153,6 +162,58 @@ export default function AdminScreen() {
   }, []);
 
   useEffect(() => {
+    function montarMapaSaldos(snapshot: any) {
+      const porEmail: Record<string, number> = {};
+      const porUid: Record<string, number> = {};
+
+      snapshot.docs.forEach((documento: any) => {
+        const data = documento.data() || {};
+        const emailLower = normalizarEmail(data.email || data.emailLower || "");
+        const uid = String(data.uid || documento.id || "");
+        const saldo = Number(data.saldo || 0);
+
+        if (emailLower) {
+          porEmail[emailLower] = saldo;
+        }
+
+        if (uid) {
+          porUid[uid] = saldo;
+        }
+      });
+
+      return {
+        porEmail,
+        porUid,
+      };
+    }
+
+    const unsubscribeUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        setSaldosUsers(montarMapaSaldos(snapshot));
+      },
+      (error) => {
+        console.log("Erro ao escutar saldos em users:", error);
+      }
+    );
+
+    const unsubscribeUsuarios = onSnapshot(
+      collection(db, "usuarios"),
+      (snapshot) => {
+        setSaldosUsuarios(montarMapaSaldos(snapshot));
+      },
+      (error) => {
+        console.log("Erro ao escutar saldos em usuarios:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeUsuarios();
+    };
+  }, []);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setAgoraTick(Date.now());
     }, 1000);
@@ -166,7 +227,7 @@ export default function AdminScreen() {
         const agora = new Date();
 
         const inicioBusca = new Date(agora.getTime() - 6 * 60 * 60 * 1000);
-        const limite24h = new Date(agora.getTime() + 24 * 60 * 60 * 1000);
+        const limite48h = new Date(agora.getTime() + 48 * 60 * 60 * 1000);
 
         const fData = (d: Date) =>
           `${d.getFullYear()}${String(d.getMonth() + 1).padStart(
@@ -176,7 +237,7 @@ export default function AdminScreen() {
 
         const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(
           inicioBusca
-        )}-${fData(limite24h)}`;
+        )}-${fData(limite48h)}`;
 
         const response = await fetch(urlESPN);
         const data = await response.json();
@@ -210,14 +271,14 @@ export default function AdminScreen() {
           const agoraMs = agora.getTime();
           const dataJogoMs = dataJogo.getTime();
 
-          const futuroDentro24h =
-            dataJogoMs >= agoraMs && dataJogoMs <= limite24h.getTime();
+          const futuroDentro48h =
+            dataJogoMs >= agoraMs && dataJogoMs <= limite48h.getTime();
 
           const jogoRecente =
             dataJogoMs < agoraMs &&
             agoraMs - dataJogoMs <= 6 * 60 * 60 * 1000;
 
-          if (!futuroDentro24h && !jogoRecente) return;
+          if (!futuroDentro48h && !jogoRecente) return;
 
           const jaTemStatusFirebase = statusFirebase[event.id] !== undefined;
 
@@ -286,7 +347,7 @@ export default function AdminScreen() {
 
     buscarJogos();
 
-    const interval = setInterval(buscarJogos, 30000);
+    const interval = setInterval(buscarJogos, 60000);
 
     return () => clearInterval(interval);
   }, []);
@@ -428,6 +489,59 @@ export default function AdminScreen() {
     return `${Number(valor || 0).toFixed(2)} BRL`;
   }
 
+  function normalizarEmail(email: string) {
+    return String(email || "").trim().toLowerCase();
+  }
+
+  function pegarSaldoVisual(item: any) {
+    const emailLower = normalizarEmail(item.email || item.emailLower || "");
+    const uid = String(item.uid || item.id || "");
+
+    const saldos = [
+      Number(item.saldo || 0),
+      emailLower ? Number(saldosUsers.porEmail[emailLower] || 0) : 0,
+      uid ? Number(saldosUsers.porUid[uid] || 0) : 0,
+      emailLower ? Number(saldosUsuarios.porEmail[emailLower] || 0) : 0,
+      uid ? Number(saldosUsuarios.porUid[uid] || 0) : 0,
+    ].filter((valor) => !isNaN(valor));
+
+    if (saldos.length === 0) return 0;
+
+    return Math.max(...saldos);
+  }
+
+  async function buscarDocumentoPorEmailEmColecao(
+    nomeColecao: "users" | "usuarios",
+    email: string
+  ) {
+    const emailLower = normalizarEmail(email);
+    const refColecao = collection(db, nomeColecao);
+
+    let snapshot = await getDocs(
+      query(refColecao, where("emailLower", "==", emailLower))
+    );
+
+    if (snapshot.empty) {
+      snapshot = await getDocs(query(refColecao, where("email", "==", email)));
+    }
+
+    if (snapshot.empty) {
+      snapshot = await getDocs(
+        query(refColecao, where("email", "==", emailLower))
+      );
+    }
+
+    if (snapshot.empty) return null;
+
+    const documento = snapshot.docs[0];
+
+    return {
+      id: documento.id,
+      ref: doc(db, nomeColecao, documento.id),
+      data: documento.data() as any,
+    };
+  }
+
   function formatarDuracao(ms: number) {
     if (ms <= 0) return "00h 00m 00s";
 
@@ -507,52 +621,128 @@ export default function AdminScreen() {
   }
 
   async function salvarSaldo(email: string) {
-    const valorDigitado = saldosEditados[email];
+    try {
+      const valorDigitado = saldosEditados[email];
 
-    if (!valorDigitado) {
-      mostrarAlerta("Atenção", "Digite um valor de saldo.");
-      return;
+      if (!valorDigitado) {
+        mostrarAlerta("Atenção", "Digite um valor de saldo.");
+        return;
+      }
+
+      const numero = Number(valorDigitado.replace(",", "."));
+
+      if (isNaN(numero) || numero < 0) {
+        mostrarAlerta("Erro", "Digite um número válido.");
+        return;
+      }
+
+      const usuarioUsers = await buscarDocumentoPorEmailEmColecao("users", email);
+      const usuarioUsuarios = await buscarDocumentoPorEmailEmColecao(
+        "usuarios",
+        email
+      );
+
+      if (!usuarioUsers && !usuarioUsuarios) {
+        mostrarAlerta("Erro", "Usuário não encontrado no Firebase.");
+        return;
+      }
+
+      const base = usuarioUsers?.data || usuarioUsuarios?.data || {};
+      const uidBase =
+        String(base.uid || usuarioUsers?.id || usuarioUsuarios?.id || "") || "";
+      const nomeBase = base.nome || base.name || "Usuário";
+      const emailBase = base.email || email;
+      const emailLower = normalizarEmail(emailBase);
+
+      const dadosAtualizados = {
+        uid: uidBase,
+        nome: nomeBase,
+        email: emailBase,
+        emailLower,
+        saldo: numero,
+        atualizadoEm: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+
+      if (usuarioUsers) {
+        batch.set(usuarioUsers.ref, dadosAtualizados, { merge: true });
+      } else if (uidBase) {
+        batch.set(doc(db, "users", uidBase), dadosAtualizados, {
+          merge: true,
+        });
+      }
+
+      if (usuarioUsuarios) {
+        batch.set(usuarioUsuarios.ref, dadosAtualizados, { merge: true });
+      } else if (uidBase) {
+        batch.set(doc(db, "usuarios", uidBase), dadosAtualizados, {
+          merge: true,
+        });
+      }
+
+      await batch.commit();
+      await carregarUsuarios();
+
+      setSaldosEditados({
+        ...saldosEditados,
+        [email]: "",
+      });
+
+      mostrarAlerta("Saldo atualizado", `Novo saldo: ${numero} BRL`);
+    } catch (error) {
+      console.log("Erro ao salvar saldo:", error);
+      mostrarAlerta("Erro", "Não foi possível salvar o saldo.");
     }
-
-    const numero = Number(valorDigitado.replace(",", "."));
-
-    if (isNaN(numero) || numero < 0) {
-      mostrarAlerta("Erro", "Digite um número válido.");
-      return;
-    }
-
-    await atualizarSaldoUsuario(email, numero);
-    await carregarUsuarios();
-
-    setSaldosEditados({
-      ...saldosEditados,
-      [email]: "",
-    });
-
-    mostrarAlerta("Saldo atualizado", `Novo saldo: ${numero} BRL`);
   }
 
   async function buscarUsuarioPorEmail(email: string) {
-    const emailLower = email.toLowerCase();
-
-    const usuariosRef = collection(db, "users");
-
-    let snapshot = await getDocs(
-      query(usuariosRef, where("emailLower", "==", emailLower))
+    const usuarioUsers = await buscarDocumentoPorEmailEmColecao("users", email);
+    const usuarioUsuarios = await buscarDocumentoPorEmailEmColecao(
+      "usuarios",
+      email
     );
 
-    if (snapshot.empty) {
-      snapshot = await getDocs(query(usuariosRef, where("email", "==", email)));
-    }
+    if (!usuarioUsers && !usuarioUsuarios) return null;
 
-    if (snapshot.empty) return null;
+    const dadosUsers = usuarioUsers?.data || {};
+    const dadosUsuarios = usuarioUsuarios?.data || {};
 
-    const documento = snapshot.docs[0];
+    const saldoUsers = Number(dadosUsers.saldo || 0);
+    const saldoUsuarios = Number(dadosUsuarios.saldo || 0);
+
+    const vitoriasUsers = Number(dadosUsers.vitoriasBolao || 0);
+    const vitoriasUsuarios = Number(dadosUsuarios.vitoriasBolao || 0);
+
+    const id =
+      String(
+        dadosUsers.uid ||
+          dadosUsuarios.uid ||
+          usuarioUsers?.id ||
+          usuarioUsuarios?.id ||
+          ""
+      ) || "";
+
+    const dadosCombinados = {
+      ...dadosUsers,
+      ...dadosUsuarios,
+      uid: id,
+      email: dadosUsers.email || dadosUsuarios.email || email,
+      emailLower: normalizarEmail(
+        dadosUsers.email || dadosUsuarios.email || email
+      ),
+      nome: dadosUsers.nome || dadosUsuarios.nome || "Usuário",
+      saldo: Math.max(saldoUsers, saldoUsuarios),
+      vitoriasBolao: Math.max(vitoriasUsers, vitoriasUsuarios),
+    };
 
     return {
-      id: documento.id,
-      ref: doc(db, "users", documento.id),
-      data: documento.data() as any,
+      id,
+      ref: usuarioUsers?.ref || usuarioUsuarios?.ref,
+      refUsers: usuarioUsers?.ref || (id ? doc(db, "users", id) : null),
+      refUsuarios:
+        usuarioUsuarios?.ref || (id ? doc(db, "usuarios", id) : null),
+      data: dadosCombinados as any,
     };
   }
 
@@ -726,10 +916,27 @@ export default function AdminScreen() {
           : vitoriasAntes;
 
         if (item.venceu && usuarioInfo) {
-          await updateDoc(usuarioInfo.ref, {
+          const dadosPremio = {
+            uid: usuarioInfo.id,
+            nome: item.nome || usuarioInfo.data.nome || "Usuário",
+            email: item.email || usuarioInfo.data.email || "",
+            emailLower:
+              item.emailLower ||
+              normalizarEmail(item.email || usuarioInfo.data.email || ""),
             saldo: saldoAtual,
             vitoriasBolao: vitoriasDepois,
-          });
+            atualizadoEm: serverTimestamp(),
+          };
+
+          if (usuarioInfo.refUsers) {
+            await setDoc(usuarioInfo.refUsers, dadosPremio, { merge: true });
+          }
+
+          if (usuarioInfo.refUsuarios) {
+            await setDoc(usuarioInfo.refUsuarios, dadosPremio, {
+              merge: true,
+            });
+          }
         }
 
         const controle = {
@@ -1187,7 +1394,7 @@ export default function AdminScreen() {
           <View style={styles.statCard}>
             <Text style={styles.statIcon}>⚽</Text>
             <Text style={styles.statNumber}>{jogos.length}</Text>
-            <Text style={styles.statLabel}>jogos 24h</Text>
+            <Text style={styles.statLabel}>jogos 48h</Text>
           </View>
         </View>
 
@@ -1211,7 +1418,7 @@ export default function AdminScreen() {
           "jogos",
           "⚽",
           "Jogos monitorados",
-          `${jogos.length} jogo(s) nas próximas 24 horas`
+          `${jogos.length} jogo(s) nas próximas 48 horas`
         )}
 
         {secoesAbertas.jogos && (
@@ -1227,7 +1434,7 @@ export default function AdminScreen() {
             {!carregandoJogos && jogos.length === 0 && (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>
-                  Nenhum jogo encontrado nas próximas 24 horas.
+                  Nenhum jogo encontrado nas próximas 48 horas.
                 </Text>
               </View>
             )}
@@ -1269,7 +1476,7 @@ export default function AdminScreen() {
                       {textoTempoPrincipal(jogo)}
                     </Text>
                     <Text style={styles.timerSub}>
-                      {jogo.data} às {jogo.horario} • Atualiza a cada 30
+                      {jogo.data} às {jogo.horario} • Atualiza a cada 60
                       segundos
                     </Text>
                   </View>
@@ -1461,7 +1668,7 @@ export default function AdminScreen() {
 
                   <View style={styles.balanceBadge}>
                     <Text style={styles.balanceBadgeText}>
-                      Saldo: {item.saldo} BRL
+                      Saldo: {formatarMoeda(pegarSaldoVisual(item))}
                     </Text>
                   </View>
 

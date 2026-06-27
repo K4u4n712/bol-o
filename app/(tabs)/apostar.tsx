@@ -6,10 +6,10 @@ import { db } from "../../services/firebaseConfig";
 import {
   doc,
   getDoc,
-  setDoc,
   collection,
   getDocs,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 import {
   View,
@@ -29,7 +29,7 @@ const VALOR_APOSTA = 10;
 // COMPONENTE INTERNO: CARD DE APOSTA
 // ============================================================================
 function CardAposta({ jogo }: { jogo: any }) {
-  const { user, atualizarSaldoUsuario } = useAuth();
+  const { user } = useAuth();
 
   const [golsCasa, setGolsCasa] = useState(0);
   const [golsFora, setGolsFora] = useState(0);
@@ -37,11 +37,13 @@ function CardAposta({ jogo }: { jogo: any }) {
   const [alteracaoUsada, setAlteracaoUsada] = useState(false);
   const [placarApostado, setPlacarApostado] = useState("");
   const [agoraTick, setAgoraTick] = useState(Date.now());
+  const [salvando, setSalvando] = useState(false);
 
   const jogoComecou =
     typeof jogo.startMillis === "number" && agoraTick >= jogo.startMillis;
 
-  const apostaBloqueada = jogoComecou || (jaApostou && alteracaoUsada);
+  const apostaBloqueada =
+    jogoComecou || (jaApostou && alteracaoUsada) || salvando;
 
   useEffect(() => {
     carregarAposta();
@@ -58,9 +60,11 @@ function CardAposta({ jogo }: { jogo: any }) {
   function getApostaId() {
     if (!user) return "";
 
-    const identificador = user.uid
-      ? user.uid
-      : user.email.toLowerCase().replace(/[\/\\.#$[\]]/g, "_");
+    const emailSeguro = (user.email || "sem_email")
+      .toLowerCase()
+      .replace(/[\/\\.#$[\]]/g, "_");
+
+    const identificador = user.uid ? user.uid : emailSeguro;
 
     return `${jogo.id}_${identificador}`;
   }
@@ -142,14 +146,36 @@ function CardAposta({ jogo }: { jogo: any }) {
     }
   }
 
+  function textoBotao() {
+    if (salvando) return "Salvando...";
+    if (jogoComecou) return "🔒 Palpites encerrados";
+    if (!jaApostou) return "Confirmar palpite";
+    if (jaApostou && !alteracaoUsada) return "Alterar palpite uma vez";
+    return "✅ Palpite realizado";
+  }
+
   async function confirmarPalpite() {
     try {
+      if (salvando) return;
+
       if (!user) {
         mostrarAlerta("Erro", "Faça login primeiro.");
         return;
       }
 
-      if (typeof jogo.startMillis === "number" && Date.now() >= jogo.startMillis) {
+      if (!user.uid) {
+        mostrarAlerta("Erro", "Usuário sem ID. Faça login novamente.");
+        return;
+      }
+
+      const uid = user.uid;
+      const nomeUsuario = user.nome || "";
+      const emailUsuario = user.email || "";
+
+      if (
+        typeof jogo.startMillis === "number" &&
+        Date.now() >= jogo.startMillis
+      ) {
         mostrarAlerta(
           "Palpites encerrados",
           "Esse jogo já começou. Só era possível apostar até o horário de início."
@@ -157,63 +183,139 @@ function CardAposta({ jogo }: { jogo: any }) {
         return;
       }
 
+      setSalvando(true);
+
       const apostaRef = doc(db, "apostas", getApostaId());
-      const apostaSnap = await getDoc(apostaRef);
-      const apostaExistente = apostaSnap.exists() ? apostaSnap.data() : null;
 
-      if (!apostaExistente && user.saldo < VALOR_APOSTA) {
-        mostrarAlerta(
-          "Saldo insuficiente",
-          `Você precisa ter pelo menos ${VALOR_APOSTA} BRL para apostar.`
-        );
-        return;
-      }
-
-      if (apostaExistente && apostaExistente.jaAlterou) {
-        mostrarAlerta(
-          "Alteração já usada",
-          "Você só pode alterar seu palpite uma vez."
-        );
-        return;
-      }
+      const usuarioRef = doc(db, "usuarios", uid);
+      const usersRef = doc(db, "users", uid);
 
       const placar = `${golsCasa} x ${golsFora}`;
 
-      const dadosAposta: any = {
-        userId: user.uid || "",
-        nome: user.nome,
-        email: user.email,
-        emailLower: user.email.toLowerCase(),
-        jogoId: jogo.id,
-        jogo: `${jogo.timeCasa.nome} x ${jogo.timeFora.nome}`,
-        timeCasa: jogo.timeCasa.nome,
-        timeFora: jogo.timeFora.nome,
-        golsCasa,
-        golsFora,
-        placar,
-        valor: VALOR_APOSTA,
-        jaAlterou: !!apostaExistente,
-        atualizadoEm: serverTimestamp(),
-      };
+      const resultado = await runTransaction(db, async (transaction) => {
+        const apostaSnap = await transaction.get(apostaRef);
+        const usuarioSnap = await transaction.get(usuarioRef);
+        const usersSnap = await transaction.get(usersRef);
 
-      if (!apostaExistente) {
-        dadosAposta.criadoEm = serverTimestamp();
-      }
+        const apostaExistente = apostaSnap.exists() ? apostaSnap.data() : null;
 
-      await setDoc(apostaRef, dadosAposta, { merge: true });
+        if (apostaExistente && apostaExistente.jaAlterou) {
+          throw new Error("ALTERACAO_JA_USADA");
+        }
 
-      if (!apostaExistente) {
-        await atualizarSaldoUsuario(user.email, user.saldo - VALOR_APOSTA);
-      }
+        let saldoAtual = 0;
+
+        if (!apostaExistente) {
+          const saldoUsuarios = usuarioSnap.exists()
+            ? Number(usuarioSnap.data().saldo || 0)
+            : 0;
+
+          const saldoUsers = usersSnap.exists()
+            ? Number(usersSnap.data().saldo || 0)
+            : 0;
+
+          saldoAtual = Math.max(saldoUsuarios, saldoUsers);
+
+          console.log("SALDO usuarios:", saldoUsuarios);
+          console.log("SALDO users:", saldoUsers);
+          console.log("SALDO usado:", saldoAtual);
+
+          if (saldoAtual < VALOR_APOSTA) {
+            throw new Error("SALDO_INSUFICIENTE");
+          }
+        }
+
+        const dadosAposta: any = {
+          userId: uid,
+          nome: nomeUsuario,
+          email: emailUsuario,
+          emailLower: emailUsuario.toLowerCase(),
+          jogoId: jogo.id,
+          jogo: `${jogo.timeCasa.nome} x ${jogo.timeFora.nome}`,
+          timeCasa: jogo.timeCasa.nome,
+          timeFora: jogo.timeFora.nome,
+          golsCasa,
+          golsFora,
+          placar,
+          valor: VALOR_APOSTA,
+          jaAlterou: !!apostaExistente,
+          atualizadoEm: serverTimestamp(),
+        };
+
+        if (!apostaExistente) {
+          dadosAposta.criadoEm = serverTimestamp();
+
+          const novoSaldo = saldoAtual - VALOR_APOSTA;
+
+          transaction.set(
+            usuarioRef,
+            {
+              uid,
+              nome: nomeUsuario,
+              email: emailUsuario,
+              saldo: novoSaldo,
+              atualizadoEm: serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          transaction.set(
+            usersRef,
+            {
+              uid,
+              nome: nomeUsuario,
+              email: emailUsuario,
+              saldo: novoSaldo,
+              atualizadoEm: serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          const extratoUsuariosRef = doc(
+            db,
+            "usuarios",
+            uid,
+            "extrato",
+            `aposta_${jogo.id}`
+          );
+
+          const extratoUsersRef = doc(
+            db,
+            "users",
+            uid,
+            "extrato",
+            `aposta_${jogo.id}`
+          );
+
+          const dadosExtrato = {
+            tipo: "aposta",
+            status: "paid",
+            valor: -VALOR_APOSTA,
+            jogoId: jogo.id,
+            jogo: `${jogo.timeCasa.nome} x ${jogo.timeFora.nome}`,
+            placar,
+            criadoEm: serverTimestamp(),
+          };
+
+          transaction.set(extratoUsuariosRef, dadosExtrato);
+          transaction.set(extratoUsersRef, dadosExtrato);
+        }
+
+        transaction.set(apostaRef, dadosAposta, { merge: true });
+
+        return {
+          foiAlteracao: !!apostaExistente,
+        };
+      });
 
       setJaApostou(true);
-      setAlteracaoUsada(!!apostaExistente);
+      setAlteracaoUsada(resultado.foiAlteracao);
       setPlacarApostado(placar);
 
       const msg = `${jogo.timeCasa.sigla} ${placar} ${jogo.timeFora.sigla}`;
 
       mostrarAlerta(
-        apostaExistente ? "Palpite alterado!" : "Palpite salvo!",
+        resultado.foiAlteracao ? "Palpite alterado!" : "Palpite salvo!",
         msg
       );
 
@@ -223,9 +325,30 @@ function CardAposta({ jogo }: { jogo: any }) {
           focusGameId: jogo.id,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.log("Erro ao salvar aposta:", error);
+
+      const mensagemErro = String(error?.message || "");
+
+      if (mensagemErro.includes("SALDO_INSUFICIENTE")) {
+        mostrarAlerta(
+          "Saldo insuficiente",
+          `Você precisa ter pelo menos ${VALOR_APOSTA} BRL para apostar.`
+        );
+        return;
+      }
+
+      if (mensagemErro.includes("ALTERACAO_JA_USADA")) {
+        mostrarAlerta(
+          "Alteração já usada",
+          "Você só pode alterar seu palpite uma vez."
+        );
+        return;
+      }
+
       mostrarAlerta("Erro", "Não foi possível salvar a aposta.");
+    } finally {
+      setSalvando(false);
     }
   }
 
@@ -237,6 +360,7 @@ function CardAposta({ jogo }: { jogo: any }) {
             source={{ uri: jogo.timeCasa.bandeira }}
             style={styles.miniFlagImg}
           />
+
           <Text style={styles.miniTeamName}>
             {jogo.timeCasa.nome.toUpperCase()}
           </Text>
@@ -248,6 +372,7 @@ function CardAposta({ jogo }: { jogo: any }) {
           <Text style={styles.miniTeamName}>
             {jogo.timeFora.nome.toUpperCase()}
           </Text>
+
           <Image
             source={{ uri: jogo.timeFora.bandeira }}
             style={styles.miniFlagImg}
@@ -287,7 +412,12 @@ function CardAposta({ jogo }: { jogo: any }) {
               onPress={aumentarCasa}
               disabled={apostaBloqueada}
             >
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+              <Text
+                style={[
+                  styles.arrowIcon,
+                  apostaBloqueada && styles.disabledText,
+                ]}
+              >
                 ˄
               </Text>
             </TouchableOpacity>
@@ -299,7 +429,12 @@ function CardAposta({ jogo }: { jogo: any }) {
               onPress={diminuirCasa}
               disabled={apostaBloqueada}
             >
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+              <Text
+                style={[
+                  styles.arrowIcon,
+                  apostaBloqueada && styles.disabledText,
+                ]}
+              >
                 ˅
               </Text>
             </TouchableOpacity>
@@ -321,7 +456,12 @@ function CardAposta({ jogo }: { jogo: any }) {
               onPress={aumentarFora}
               disabled={apostaBloqueada}
             >
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+              <Text
+                style={[
+                  styles.arrowIcon,
+                  apostaBloqueada && styles.disabledText,
+                ]}
+              >
                 ˄
               </Text>
             </TouchableOpacity>
@@ -333,7 +473,12 @@ function CardAposta({ jogo }: { jogo: any }) {
               onPress={diminuirFora}
               disabled={apostaBloqueada}
             >
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+              <Text
+                style={[
+                  styles.arrowIcon,
+                  apostaBloqueada && styles.disabledText,
+                ]}
+              >
                 ˅
               </Text>
             </TouchableOpacity>
@@ -387,10 +532,7 @@ function CardAposta({ jogo }: { jogo: any }) {
             apostaBloqueada && styles.confirmTextDisabled,
           ]}
         >
-          {jogoComecou && "🔒 Palpites encerrados"}
-          {!jogoComecou && !jaApostou && "Confirmar palpite"}
-          {!jogoComecou && jaApostou && !alteracaoUsada && "Alterar palpite uma vez"}
-          {!jogoComecou && jaApostou && alteracaoUsada && "✅ Palpite realizado"}
+          {textoBotao()}
         </Text>
       </TouchableOpacity>
     </View>
@@ -431,64 +573,63 @@ export default function ApostarScreen() {
           statusFirebase[docSnap.id] = docSnap.data().aberta;
         });
 
-        const filtrados = (data.events || []).reduce((acc: any[], event: any) => {
-          const dataJogo = new Date(event.date);
-          const status = event.status?.type?.state;
+        const filtrados = (data.events || []).reduce(
+          (acc: any[], event: any) => {
+            const dataJogo = new Date(event.date);
+            const status = event.status?.type?.state;
 
-          const competidores = event.competitions?.[0]?.competitors || [];
+            const competidores = event.competitions?.[0]?.competitors || [];
 
-          const timeCasa = competidores.find(
-            (c: any) => c.homeAway === "home"
-          );
+            const timeCasa = competidores.find(
+              (c: any) => c.homeAway === "home"
+            );
 
-          const timeFora = competidores.find(
-            (c: any) => c.homeAway === "away"
-          );
+            const timeFora = competidores.find(
+              (c: any) => c.homeAway === "away"
+            );
 
-          if (!timeCasa || !timeFora) return acc;
+            if (!timeCasa || !timeFora) return acc;
 
-          // Não mostra jogo fora das próximas 48 horas
-          if (dataJogo > limite48h) return acc;
+            if (dataJogo > limite48h) return acc;
 
-          // Não mostra jogo finalizado
-          if (status === "post") return acc;
+            if (status === "post") return acc;
 
-          // REGRA PRINCIPAL:
-          // se o jogo já começou, não aparece mais na tela Apostar
-          if (dataJogo.getTime() <= agora.getTime()) return acc;
+            if (dataJogo.getTime() <= agora.getTime()) return acc;
 
-          const jaTemStatus = statusFirebase[event.id] !== undefined;
+            const jaTemStatus = statusFirebase[event.id] !== undefined;
 
-          const isOpen = jaTemStatus
-            ? statusFirebase[event.id]
-            : status === "pre";
+            const isOpen = jaTemStatus
+              ? statusFirebase[event.id]
+              : status === "pre";
 
-          if (isOpen) {
-            acc.push({
-              id: event.id,
-              data: dataJogo.toLocaleDateString("pt-BR"),
-              horario: dataJogo.toLocaleTimeString("pt-BR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              startMillis: dataJogo.getTime(),
-              timeCasa: {
-                nome: timeCasa.team.displayName,
-                sigla: timeCasa.team.abbreviation,
-                bandeira:
-                  timeCasa.team.logo || "https://via.placeholder.com/50",
-              },
-              timeFora: {
-                nome: timeFora.team.displayName,
-                sigla: timeFora.team.abbreviation,
-                bandeira:
-                  timeFora.team.logo || "https://via.placeholder.com/50",
-              },
-            });
-          }
+            if (isOpen) {
+              acc.push({
+                id: event.id,
+                data: dataJogo.toLocaleDateString("pt-BR"),
+                horario: dataJogo.toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                startMillis: dataJogo.getTime(),
+                timeCasa: {
+                  nome: timeCasa.team.displayName,
+                  sigla: timeCasa.team.abbreviation,
+                  bandeira:
+                    timeCasa.team.logo || "https://via.placeholder.com/50",
+                },
+                timeFora: {
+                  nome: timeFora.team.displayName,
+                  sigla: timeFora.team.abbreviation,
+                  bandeira:
+                    timeFora.team.logo || "https://via.placeholder.com/50",
+                },
+              });
+            }
 
-          return acc;
-        }, []);
+            return acc;
+          },
+          []
+        );
 
         setJogosAbertos(filtrados);
       } catch (error) {
