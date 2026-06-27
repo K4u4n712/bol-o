@@ -25,7 +25,7 @@ import {
 } from "firebase/firestore";
 
 const CREATE_CHECKOUT_URL =
-  "https://southamerica-east1-SEU_PROJETO.cloudfunctions.net/createInfinitePayCheckout";
+  "https://bol-o-rouge.vercel.app/api/create-checkout";
 
 type PerfilStats = {
   totalPalpites: number;
@@ -56,15 +56,22 @@ export default function PerfilScreen() {
 
     const userRef = doc(db, "usuarios", user.uid);
 
-    const unsubscribe = onSnapshot(userRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        setSaldoAtual(Number(user?.saldo || 0));
-        return;
-      }
+    const unsubscribe = onSnapshot(
+      userRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSaldoAtual(Number(user?.saldo || 0));
+          return;
+        }
 
-      const data = snapshot.data();
-      setSaldoAtual(Number(data.saldo || 0));
-    });
+        const data = snapshot.data();
+        setSaldoAtual(Number(data.saldo || 0));
+      },
+      (error) => {
+        console.log("Erro ao buscar saldo:", error);
+        setSaldoAtual(Number(user?.saldo || 0));
+      }
+    );
 
     return () => unsubscribe();
   }, [user?.uid]);
@@ -136,34 +143,46 @@ export default function PerfilScreen() {
     const apostasRef = collection(db, "apostas");
     const qApostas = query(apostasRef, where("emailLower", "==", emailLower));
 
-    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
-      totalPalpitesAtual = snapshot.size;
+    const unsubscribeApostas = onSnapshot(
+      qApostas,
+      (snapshot) => {
+        totalPalpitesAtual = snapshot.size;
 
-      if (!snapshot.empty) {
-        const apostas = snapshot.docs.map((docItem) => docItem.data());
+        if (!snapshot.empty) {
+          const apostas = snapshot.docs.map((docItem) => docItem.data());
 
-        apostas.sort((a: any, b: any) => {
-          const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
-          const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
-          return dataB - dataA;
-        });
+          apostas.sort((a: any, b: any) => {
+            const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
+            const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+            return dataB - dataA;
+          });
 
-        ultimoPalpite = apostas[0]?.placar
-          ? `Brasil ${apostas[0].placar} Argentina`
-          : "Nenhum palpite ainda";
-      } else {
-        ultimoPalpite = "Nenhum palpite ainda";
+          ultimoPalpite = apostas[0]?.placar
+            ? `Brasil ${apostas[0].placar} Argentina`
+            : "Nenhum palpite ainda";
+        } else {
+          ultimoPalpite = "Nenhum palpite ainda";
+        }
+
+        recalcularStats();
+      },
+      (error) => {
+        console.log("Erro ao buscar apostas:", error);
       }
-
-      recalcularStats();
-    });
+    );
 
     const resultadosRef = collection(db, "resultados");
 
-    const unsubscribeResultados = onSnapshot(resultadosRef, (snapshot) => {
-      resultadosDocs = snapshot.docs.map((docItem) => docItem.data());
-      recalcularStats();
-    });
+    const unsubscribeResultados = onSnapshot(
+      resultadosRef,
+      (snapshot) => {
+        resultadosDocs = snapshot.docs.map((docItem) => docItem.data());
+        recalcularStats();
+      },
+      (error) => {
+        console.log("Erro ao buscar resultados:", error);
+      }
+    );
 
     return () => {
       unsubscribeApostas();
@@ -209,6 +228,8 @@ export default function PerfilScreen() {
         return;
       }
 
+      if (depositando) return;
+
       setDepositando(true);
 
       const response = await fetch(CREATE_CHECKOUT_URL, {
@@ -224,17 +245,24 @@ export default function PerfilScreen() {
         }),
       });
 
-      const data = await response.json();
+      let data: any = {};
+
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.log("Erro ao ler resposta do checkout:", jsonError);
+      }
 
       if (!response.ok || !data.success || !data.url) {
         mostrarAlerta(
           "Erro",
-          data.message || "Não foi possível gerar o checkout."
+          data.message || "Não foi possível gerar o checkout Pix."
         );
         return;
       }
 
       setModalDeposito(false);
+
       await Linking.openURL(data.url);
     } catch (error) {
       console.log("Erro ao abrir checkout:", error);
@@ -325,7 +353,7 @@ export default function PerfilScreen() {
         </View>
 
         <TouchableOpacity
-          style={styles.depositButton}
+          style={[styles.depositButton, depositando && styles.buttonDisabled]}
           onPress={() => setModalDeposito(true)}
           disabled={depositando}
         >
