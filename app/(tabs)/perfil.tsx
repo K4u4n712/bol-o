@@ -173,20 +173,14 @@ export default function PerfilScreen() {
       return;
     }
 
-    if (CHECKOUT_INFINITEPAY_URL.includes("https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41")) {
-      mostrarAlerta(
-        "Link não configurado",
-        "Cole o link do checkout da InfinitePay no código."
-      );
-      return;
-    }
-
     setModalDeposito(false);
 
+    // Cria o identificador do usuário para o Webhook saber quem pagou
     const identificadorUsuario = user?.uid || user?.email?.toLowerCase().replace(/[^a-z0-9]/g, "");
+    
+    // Anexa o identificador e o valor na URL da InfinitePay
     const urlComTracking = `${CHECKOUT_INFINITEPAY_URL}?reference_id=${identificadorUsuario}&amount=${valor}`;
     
-
     const abriu = await Linking.openURL(urlComTracking);
 
     if (!abriu) {
