@@ -1,0 +1,9 @@
+{
+  "name": "backend-bolao",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.6.0"
+  }
+}

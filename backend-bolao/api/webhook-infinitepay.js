@@ -1,0 +1,170 @@
+const { db, admin } = require("../lib/firebaseAdmin");
+
+const INFINITEPAY_HANDLE = "pitstoplanchepizzariaa";
+
+module.exports = async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      success: false,
+      message: "Método não permitido.",
+    });
+  }
+
+  try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+
+    console.log("Webhook recebido da InfinitePay:", JSON.stringify(body));
+
+    const {
+      invoice_slug,
+      amount,
+      paid_amount,
+      installments,
+      capture_method,
+      transaction_nsu,
+      order_nsu,
+      receipt_url,
+      items,
+    } = body || {};
+
+    if (!order_nsu || !transaction_nsu || !invoice_slug) {
+      return res.status(400).json({
+        success: false,
+        message: "Dados incompletos no webhook.",
+      });
+    }
+
+    const pagamentoRef = db.collection("pagamentos").doc(order_nsu);
+    const pagamentoSnap = await pagamentoRef.get();
+
+    if (!pagamentoSnap.exists) {
+      return res.status(400).json({
+        success: false,
+        message: "Pedido não encontrado.",
+      });
+    }
+
+    const pagamento = pagamentoSnap.data();
+
+    if (pagamento.status === "paid") {
+      return res.status(200).json({
+        success: true,
+        message: null,
+      });
+    }
+
+    const checkResponse = await fetch(
+      "https://api.checkout.infinitepay.io/payment_check",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          handle: INFINITEPAY_HANDLE,
+          order_nsu,
+          transaction_nsu,
+          slug: invoice_slug,
+        }),
+      }
+    );
+
+    const checkData = await checkResponse.json();
+
+    console.log("Resposta payment_check:", JSON.stringify(checkData));
+
+    if (!checkResponse.ok || !checkData.success || !checkData.paid) {
+      await pagamentoRef.update({
+        status: "check_failed",
+        webhookRecebido: body,
+        paymentCheck: checkData,
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: "Pagamento ainda não confirmado.",
+      });
+    }
+
+    if (Number(checkData.amount) !== Number(pagamento.valorCentavos)) {
+      await pagamentoRef.update({
+        status: "value_mismatch",
+        webhookRecebido: body,
+        paymentCheck: checkData,
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: "Valor pago diferente do valor criado.",
+      });
+    }
+
+    const userRef = db.collection("usuarios").doc(pagamento.uid);
+
+    await db.runTransaction(async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+
+      const saldoAtual = userSnap.exists
+        ? Number(userSnap.data().saldo || 0)
+        : 0;
+
+      const novoSaldo = saldoAtual + Number(pagamento.valorReais);
+
+      transaction.update(pagamentoRef, {
+        status: "paid",
+        pagoEm: admin.firestore.FieldValue.serverTimestamp(),
+        invoice_slug,
+        amount: amount || null,
+        paid_amount: paid_amount || null,
+        installments: installments || null,
+        capture_method: capture_method || null,
+        transaction_nsu,
+        receipt_url: receipt_url || null,
+        items: Array.isArray(items) ? items : [],
+        webhookRecebido: body,
+        paymentCheck: checkData,
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      transaction.set(
+        userRef,
+        {
+          uid: pagamento.uid,
+          nome: pagamento.nome || "",
+          email: pagamento.email || "",
+          saldo: novoSaldo,
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      const extratoRef = userRef.collection("extrato").doc(order_nsu);
+
+      transaction.set(extratoRef, {
+        tipo: "deposito",
+        status: "paid",
+        valor: Number(pagamento.valorReais),
+        valorCentavos: Number(pagamento.valorCentavos),
+        pagamentoId: order_nsu,
+        transaction_nsu,
+        receipt_url: receipt_url || null,
+        criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: null,
+    });
+  } catch (error) {
+    console.error("Erro no webhook InfinitePay:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: "Erro ao processar webhook.",
+      error: String(error),
+    });
+  }
+};
