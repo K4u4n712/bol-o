@@ -175,8 +175,8 @@ export default function PerfilScreen() {
 
     if (CHECKOUT_INFINITEPAY_URL.includes("https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41")) {
       mostrarAlerta(
-        "https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41",
-        "https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41"
+        "Link não configurado",
+        "Cole o link do checkout da InfinitePay no código."
       );
       return;
     }
