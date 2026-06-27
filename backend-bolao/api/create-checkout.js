@@ -2,7 +2,11 @@ const { db, admin } = require("../lib/firebaseAdmin");
 
 const INFINITEPAY_HANDLE = "pitstoplanchepizzariaa";
 
+// Backend atual, usado para o webhook da InfinitePay
 const PUBLIC_BASE_URL = "https://bol-o-rouge.vercel.app";
+
+// Site/PWA para onde o usuário deve voltar depois do pagamento
+const PWA_BASE_URL = "https://bolao10-web.vercel.app";
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -46,6 +50,12 @@ module.exports = async function handler(req, res) {
     const pagamentoRef = db.collection("pagamentos").doc();
     const orderNsu = pagamentoRef.id;
 
+    // Depois do pagamento, a InfinitePay manda o usuário para esta tela do PWA.
+    // O order_nsu vai na URL para a tela conseguir acompanhar o status no Firebase.
+    const redirectUrl = `${PWA_BASE_URL}/pagamento-retorno?order_nsu=${encodeURIComponent(
+      orderNsu
+    )}`;
+
     await pagamentoRef.set({
       uid,
       nome: nome || "Usuário",
@@ -55,14 +65,20 @@ module.exports = async function handler(req, res) {
       status: "pending",
       tipo: "deposito_saldo",
       order_nsu: orderNsu,
+      redirectUrl,
       criadoEm: admin.firestore.FieldValue.serverTimestamp(),
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     const payload = {
       handle: INFINITEPAY_HANDLE,
-      redirect_url: "https://google.com",
+
+      // Antes estava indo para o Google. Agora volta para o seu PWA.
+      redirect_url: redirectUrl,
+
+      // O saldo continua sendo confirmado pelo webhook, que é o jeito seguro.
       webhook_url: `${PUBLIC_BASE_URL}/api/webhook-infinitepay`,
+
       order_nsu: orderNsu,
       customer: {
         name: nome || "Usuário",
@@ -118,6 +134,7 @@ module.exports = async function handler(req, res) {
       success: true,
       url: checkoutUrl,
       order_nsu: orderNsu,
+      redirect_url: redirectUrl,
     });
   } catch (error) {
     console.error("Erro ao criar checkout:", error);
