@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { router } from "expo-router";
 import { db } from "../../services/firebaseConfig";
 import {
   collection,
   doc,
   onSnapshot,
-  query,
-  where,
   getDocs,
 } from "firebase/firestore";
 import {
@@ -26,8 +24,39 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 
 const VALOR_APOSTA = 10;
+
 // Mantivemos este ID apenas para não quebrar a sua lógica atual de notificações do Backend
-const JOGO_ID_NOTIFICACAO = "brasil-argentina-2026"; 
+const JOGO_ID_NOTIFICACAO = "brasil-argentina-2026";
+
+type JogoHome = {
+  id: string;
+  data: string;
+  horario: string;
+  startMillis: number;
+  status: string;
+  apostasAbertas: boolean;
+  timeCasa: {
+    nome: string;
+    sigla: string;
+    bandeira: string;
+  };
+  timeFora: {
+    nome: string;
+    sigla: string;
+    bandeira: string;
+  };
+};
+
+type ApostaHome = {
+  id: string;
+  jogoId: string;
+  valor: number;
+};
+
+type JogoDestaque = JogoHome & {
+  participantes: number;
+  totalBolao: number;
+};
 
 function gerarIdNotificacao(email: string) {
   return `${JOGO_ID_NOTIFICACAO}_${email
@@ -44,115 +73,236 @@ function gerarIdNotificacao(email: string) {
 export default function HomeScreen() {
   const { user } = useAuth();
 
-  const [proximoJogo, setProximoJogo] = useState<any>(null);
+  const [jogosDisponiveis, setJogosDisponiveis] = useState<JogoHome[]>([]);
+  const [apostas, setApostas] = useState<ApostaHome[]>([]);
   const [loadingJogo, setLoadingJogo] = useState(true);
-  
-  const [participantes, setParticipantes] = useState(0);
+
   const [notificacao, setNotificacao] = useState<any>(null);
   const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
-  const totalBolao = participantes * VALOR_APOSTA;
 
   // 1. ANIMAÇÃO DO PONTO "AO VIVO"
   useEffect(() => {
-    Animated.loop(
+    const animacao = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.35, duration: 750, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 750, useNativeDriver: true }),
+        Animated.timing(pulse, {
+          toValue: 1.35,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
       ])
-    ).start();
-  }, []);
+    );
 
-  // 2. BUSCAR O PRIMEIRO JOGO ABERTO DA ESPN E FIREBASE
+    animacao.start();
+
+    return () => animacao.stop();
+  }, [pulse]);
+
+  // 2. BUSCAR JOGOS DA ESPN E STATUS DO FIREBASE
   useEffect(() => {
-    const buscarJogoDestaque = async () => {
+    async function buscarJogosDisponiveis() {
       try {
         const agora = new Date();
-        const limite48h = new Date(agora.getTime() + (48 * 60 * 60 * 1000));
-        
-        const fData = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(agora)}-${fData(limite48h)}`;
+        const limite48h = new Date(agora.getTime() + 48 * 60 * 60 * 1000);
+
+        const fData = (d: Date) =>
+          `${d.getFullYear()}${String(d.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}${String(d.getDate()).padStart(2, "0")}`;
+
+        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(
+          agora
+        )}-${fData(limite48h)}`;
 
         const response = await fetch(urlESPN);
         const data = await response.json();
 
         const statusSnapshot = await getDocs(collection(db, "status_apostas"));
+
         const statusFirebase: Record<string, boolean> = {};
-        statusSnapshot.forEach(docSnap => {
-          statusFirebase[docSnap.id] = docSnap.data().aberta;
+
+        statusSnapshot.forEach((docSnap) => {
+          statusFirebase[docSnap.id] = Boolean(docSnap.data().aberta);
         });
 
-        let jogoEncontrado = null;
+        const lista: JogoHome[] = [];
 
-        for (const event of data.events) {
+        (data.events || []).forEach((event: any) => {
           const dataJogo = new Date(event.date);
-          const status = event.status.type.state; 
-          
-          if (dataJogo > limite48h || status === 'post') continue;
+          const status = event.status?.type?.state || "pre";
+
+          if (dataJogo > limite48h) return;
+          if (status === "post") return;
+
+          const competidores = event.competitions?.[0]?.competitors || [];
+
+          const timeCasa = competidores.find(
+            (c: any) => c.homeAway === "home"
+          );
+
+          const timeFora = competidores.find(
+            (c: any) => c.homeAway === "away"
+          );
+
+          if (!timeCasa || !timeFora) return;
 
           const jaTemStatus = statusFirebase[event.id] !== undefined;
-          const isOpen = jaTemStatus ? statusFirebase[event.id] : (status === 'pre');
 
-          if (isOpen) {
-            const competidores = event.competitions[0].competitors;
-            const timeCasa = competidores.find((c: any) => c.homeAway === 'home');
-            const timeFora = competidores.find((c: any) => c.homeAway === 'away');
+          const apostasAbertas = jaTemStatus
+            ? statusFirebase[event.id]
+            : status === "pre";
 
-            jogoEncontrado = {
-              id: event.id,
-              data: dataJogo.toLocaleDateString('pt-BR'),
-              horario: dataJogo.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-              timeCasa: { nome: timeCasa.team.displayName, sigla: timeCasa.team.abbreviation, bandeira: timeCasa.team.logo },
-              timeFora: { nome: timeFora.team.displayName, sigla: timeFora.team.abbreviation, bandeira: timeFora.team.logo }
-            };
-            break; // Interrompe o loop após achar o primeiro jogo aberto
-          }
-        }
+          lista.push({
+            id: String(event.id),
+            data: dataJogo.toLocaleDateString("pt-BR"),
+            horario: dataJogo.toLocaleTimeString("pt-BR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            startMillis: dataJogo.getTime(),
+            status,
+            apostasAbertas,
+            timeCasa: {
+              nome: timeCasa.team.displayName,
+              sigla: timeCasa.team.abbreviation,
+              bandeira:
+                timeCasa.team.logo || "https://via.placeholder.com/50",
+            },
+            timeFora: {
+              nome: timeFora.team.displayName,
+              sigla: timeFora.team.abbreviation,
+              bandeira:
+                timeFora.team.logo || "https://via.placeholder.com/50",
+            },
+          });
+        });
 
-        setProximoJogo(jogoEncontrado);
-        setLoadingJogo(false);
+        lista.sort((a, b) => a.startMillis - b.startMillis);
+
+        setJogosDisponiveis(lista);
       } catch (error) {
-        console.error("Erro ao carregar jogo da home:", error);
+        console.error("Erro ao carregar jogos da home:", error);
+        setJogosDisponiveis([]);
+      } finally {
         setLoadingJogo(false);
       }
-    };
+    }
 
-    buscarJogoDestaque();
+    buscarJogosDisponiveis();
+
+    const interval = setInterval(buscarJogosDisponiveis, 60000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  // 3. MONITORAR PARTICIPANTES DO JOGO DINÂMICO
+  // 3. MONITORAR TODAS AS APOSTAS PARA A HOME ESCOLHER O MAIOR BOLÃO
   useEffect(() => {
-    if (!proximoJogo) return; // Só busca se tiver um jogo definido
-
     const apostasRef = collection(db, "apostas");
-    // Filtra para contar apenas quem apostou neste jogo específico
-    const qApostas = query(apostasRef, where("jogoId", "==", proximoJogo.id.toString()));
 
-    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
-      setParticipantes(snapshot.size);
-    }, (error) => {
-      console.log("Erro ao carregar participantes:", error);
-    });
+    const unsubscribeApostas = onSnapshot(
+      apostasRef,
+      (snapshot) => {
+        const lista: ApostaHome[] = snapshot.docs.map((documento) => {
+          const data = documento.data();
+
+          return {
+            id: documento.id,
+            jogoId: String(data.jogoId || ""),
+            valor: Number(data.valor || VALOR_APOSTA),
+          };
+        });
+
+        setApostas(lista);
+      },
+      (error) => {
+        console.log("Erro ao carregar apostas da home:", error);
+      }
+    );
 
     return () => unsubscribeApostas();
-  }, [proximoJogo]);
+  }, []);
 
-  // 4. MONITORAR NOTIFICAÇÕES GERAIS
+  // 4. ESCOLHER O JOGO COM MAIS DINHEIRO/PESSOAS
+  const jogoDestaque = useMemo<JogoDestaque | null>(() => {
+    if (jogosDisponiveis.length === 0) return null;
+
+    const jogosComTotais = jogosDisponiveis
+      .map((jogo) => {
+        const apostasDoJogo = apostas.filter(
+          (aposta) => String(aposta.jogoId) === String(jogo.id)
+        );
+
+        const participantes = apostasDoJogo.length;
+
+        const totalBolao = apostasDoJogo.reduce((total, aposta) => {
+          return total + Number(aposta.valor || VALOR_APOSTA);
+        }, 0);
+
+        return {
+          ...jogo,
+          participantes,
+          totalBolao,
+        };
+      })
+      .filter((jogo) => {
+        // Mostra jogos abertos ou bolões que já têm dinheiro/pessoas.
+        return jogo.apostasAbertas || jogo.participantes > 0;
+      });
+
+    if (jogosComTotais.length === 0) return null;
+
+    jogosComTotais.sort((a, b) => {
+      // Prioridade principal: maior bolão acumulado.
+      if (b.totalBolao !== a.totalBolao) return b.totalBolao - a.totalBolao;
+
+      // Segunda prioridade: mais participantes.
+      if (b.participantes !== a.participantes) {
+        return b.participantes - a.participantes;
+      }
+
+      // Terceira prioridade: jogos abertos antes de fechados.
+      if (a.apostasAbertas && !b.apostasAbertas) return -1;
+      if (!a.apostasAbertas && b.apostasAbertas) return 1;
+
+      // Última prioridade: jogo mais próximo.
+      return a.startMillis - b.startMillis;
+    });
+
+    return jogosComTotais[0];
+  }, [jogosDisponiveis, apostas]);
+
+  // 5. MONITORAR NOTIFICAÇÕES GERAIS
   useEffect(() => {
     let unsubscribeNotificacao: (() => void) | undefined;
 
     if (user?.email) {
-      const notificacaoRef = doc(db, "notificacoes", gerarIdNotificacao(user.email));
-      unsubscribeNotificacao = onSnapshot(notificacaoRef, (snapshot) => {
-        if (!snapshot.exists()) {
-          setNotificacao(null);
-          return;
+      const notificacaoRef = doc(
+        db,
+        "notificacoes",
+        gerarIdNotificacao(user.email)
+      );
+
+      unsubscribeNotificacao = onSnapshot(
+        notificacaoRef,
+        (snapshot) => {
+          if (!snapshot.exists()) {
+            setNotificacao(null);
+            return;
+          }
+
+          setNotificacao(snapshot.data());
+        },
+        (error) => {
+          console.log("Erro ao carregar notificação:", error);
         }
-        setNotificacao(snapshot.data());
-      }, (error) => {
-        console.log("Erro ao carregar notificação:", error);
-      });
+      );
     } else {
       setNotificacao(null);
     }
@@ -174,11 +324,19 @@ export default function HomeScreen() {
     router.push("/apostar");
   }
 
+  function irParaBolao() {
+    router.push("/bolao");
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.hero}>
           <View style={styles.topBar}>
             <TouchableOpacity>
@@ -186,7 +344,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <View style={styles.logoRow}>
-              <Animated.View style={[styles.liveDot, { transform: [{ scale: pulse }] }]} />
+              <Animated.View
+                style={[styles.liveDot, { transform: [{ scale: pulse }] }]}
+              />
               <Text style={styles.logoBall}>⚽</Text>
               <Text style={styles.logoText}>Bolão</Text>
               <Text style={styles.logoNumber}>10</Text>
@@ -199,7 +359,9 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.welcomeBox}>
-            <Text style={styles.welcomeTitle}>Olá, {user?.nome || "Jogador"}! 👋</Text>
+            <Text style={styles.welcomeTitle}>
+              Olá, {user?.nome || "Jogador"}! 👋
+            </Text>
             <Text style={styles.welcomeText}>Que comece o bolão!</Text>
           </View>
 
@@ -208,71 +370,103 @@ export default function HomeScreen() {
           <View style={styles.heroDecorThree} />
         </View>
 
-        {/* LOADING DO JOGO */}
         {loadingJogo ? (
-          <View style={[styles.gameCard, { paddingVertical: 40 }]}>
+          <View style={[styles.gameCard, { paddingVertical: 40 }]}> 
             <ActivityIndicator size="large" color="#006B2E" />
-            <Text style={{ marginTop: 10, color: '#6B7280', fontWeight: 'bold' }}>Buscando o próximo grande jogo...</Text>
+            <Text style={styles.loadingText}>
+              Buscando o maior bolão disponível...
+            </Text>
           </View>
-        ) : !proximoJogo ? (
-          /* CASO NÃO HAJA JOGOS ABERTOS (CADEADO) */
-          <View style={[styles.gameCard, { paddingVertical: 40 }]}>
-             <Text style={{ fontSize: 50, marginBottom: 10 }}>🔒</Text>
-             <Text style={{ color: "#111827", fontSize: 18, fontWeight: "900" }}>Nenhum jogo aberto</Text>
-             <Text style={{ color: "#6B7280", textAlign: "center", marginTop: 6, paddingHorizontal: 20 }}>
-               As apostas estão fechadas no momento ou não há jogos programados.
-             </Text>
+        ) : !jogoDestaque ? (
+          <View style={[styles.gameCard, { paddingVertical: 40 }]}> 
+            <Text style={{ fontSize: 50, marginBottom: 10 }}>🔒</Text>
+            <Text style={styles.emptyGameTitle}>Nenhum jogo aberto</Text>
+            <Text style={styles.emptyGameText}>
+              As apostas estão fechadas no momento ou não há jogos programados.
+            </Text>
           </View>
         ) : (
-          /* RENDERIZA O PRIMEIRO JOGO DINÂMICO ENCONTRADO */
           <>
-            <View style={styles.gameCard}>
+            <TouchableOpacity
+              style={styles.gameCard}
+              activeOpacity={0.9}
+              onPress={irParaBolao}
+            >
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>PRÓXIMO JOGO</Text>
+                <Text style={styles.badgeText}>
+                  {jogoDestaque.totalBolao > 0
+                    ? "BOLÃO EM DESTAQUE"
+                    : "PRÓXIMO JOGO"}
+                </Text>
               </View>
 
-              <Text style={styles.gameTitle}>{proximoJogo.timeCasa.nome} x {proximoJogo.timeFora.nome}</Text>
+              <Text style={styles.gameTitle}>
+                {jogoDestaque.timeCasa.nome} x {jogoDestaque.timeFora.nome}
+              </Text>
 
               <View style={styles.teamsRow}>
                 <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-                  <Image source={{ uri: proximoJogo.timeCasa.bandeira }} style={styles.flagImage} />
-                  <Text style={styles.teamName}>{proximoJogo.timeCasa.sigla}</Text>
+                  <Image
+                    source={{ uri: jogoDestaque.timeCasa.bandeira }}
+                    style={styles.flagImage}
+                  />
+                  <Text style={styles.teamName}>{jogoDestaque.timeCasa.sigla}</Text>
                 </TouchableOpacity>
 
                 <Text style={styles.vs}>X</Text>
 
                 <TouchableOpacity style={styles.teamBox} onPress={irParaAposta}>
-                  <Image source={{ uri: proximoJogo.timeFora.bandeira }} style={styles.flagImage} />
-                  <Text style={styles.teamName}>{proximoJogo.timeFora.sigla}</Text>
+                  <Image
+                    source={{ uri: jogoDestaque.timeFora.bandeira }}
+                    style={styles.flagImage}
+                  />
+                  <Text style={styles.teamName}>{jogoDestaque.timeFora.sigla}</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.gameInfo}>
-                <Text style={styles.infoText}>📅 {proximoJogo.data}</Text>
-                <Text style={styles.infoText}>🕘 {proximoJogo.horario}</Text>
+                <Text style={styles.infoText}>📅 {jogoDestaque.data}</Text>
+                <Text style={styles.infoText}>🕘 {jogoDestaque.horario}</Text>
               </View>
 
               <View style={styles.priceBox}>
-                <Text style={styles.priceText}>💸 Entrada: R$ {VALOR_APOSTA},00</Text>
+                <Text style={styles.priceText}>
+                  💸 Entrada: R$ {VALOR_APOSTA},00
+                </Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
             <Text style={styles.sectionTitle}>Em quem você acha que vence?</Text>
 
             <View style={styles.buttonsRow}>
-              <TouchableOpacity style={[styles.betButton, { backgroundColor: "#E6F4EA" }]} onPress={irParaAposta}>
-                <Image source={{ uri: proximoJogo.timeCasa.bandeira }} style={styles.btnFlagImage} />
-                <Text style={styles.betButtonText}>{proximoJogo.timeCasa.sigla}</Text>
+              <TouchableOpacity
+                style={[styles.betButton, { backgroundColor: "#E6F4EA" }]}
+                onPress={irParaAposta}
+              >
+                <Image
+                  source={{ uri: jogoDestaque.timeCasa.bandeira }}
+                  style={styles.btnFlagImage}
+                />
+                <Text style={styles.betButtonText}>{jogoDestaque.timeCasa.sigla}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.betButton, { backgroundColor: "#EEF2FF" }]} onPress={irParaAposta}>
-                <Image source={{ uri: proximoJogo.timeFora.bandeira }} style={styles.btnFlagImage} />
-                <Text style={styles.betButtonText}>{proximoJogo.timeFora.sigla}</Text>
+              <TouchableOpacity
+                style={[styles.betButton, { backgroundColor: "#EEF2FF" }]}
+                onPress={irParaAposta}
+              >
+                <Image
+                  source={{ uri: jogoDestaque.timeFora.bandeira }}
+                  style={styles.btnFlagImage}
+                />
+                <Text style={styles.betButtonText}>{jogoDestaque.timeFora.sigla}</Text>
               </TouchableOpacity>
             </View>
 
-            {/* A REGRA {participantes > 0} FOI REMOVIDA DAQUI. AGORA SEMPRE MOSTRA! */}
-            <View style={styles.liveBox}>
+            <TouchableOpacity
+              style={styles.liveBox}
+              activeOpacity={0.9}
+              onPress={irParaBolao}
+            >
               <View style={styles.liveHeader}>
                 <Text style={styles.liveTitle}>AO VIVO NO BOLÃO</Text>
                 <View style={styles.liveBadge}>
@@ -283,24 +477,25 @@ export default function HomeScreen() {
               <View style={styles.statsRow}>
                 <View style={styles.statCard}>
                   <Text style={styles.statIcon}>👥</Text>
-                  <Text style={styles.statNumber}>{participantes}</Text>
+                  <Text style={styles.statNumber}>
+                    {jogoDestaque.participantes}
+                  </Text>
                   <Text style={styles.statLabel}>pessoas apostando</Text>
                 </View>
 
                 <View style={styles.statCard}>
                   <Text style={styles.statIcon}>🪙</Text>
-                  <Text style={styles.statNumber}>{totalBolao}</Text>
+                  <Text style={styles.statNumber}>{jogoDestaque.totalBolao}</Text>
                   <Text style={styles.statLabel}>BRL acumulado</Text>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           </>
         )}
 
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      {/* MENU INFERIOR */}
       <View style={styles.bottomMenu}>
         <TouchableOpacity style={styles.menuItemActive}>
           <Text style={styles.menuIcon}>🏠</Text>
@@ -333,10 +528,14 @@ export default function HomeScreen() {
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
-      </View> 
+      </View>
 
-      {/* MODAL DE NOTIFICAÇÕES */}
-      <Modal visible={mostrarNotificacao} transparent={true} animationType="fade" onRequestClose={fecharNotificacao}>
+      <Modal
+        visible={mostrarNotificacao}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={fecharNotificacao}
+      >
         <Pressable style={styles.modalOverlay} onPress={fecharNotificacao}>
           <Pressable style={styles.modalContent}>
             <View style={styles.notificationHeader}>
@@ -348,22 +547,36 @@ export default function HomeScreen() {
 
             {!notificacao ? (
               <View style={styles.emptyNotification}>
-                <Text style={styles.emptyNotificationText}>Nenhuma notificação no momento.</Text>
+                <Text style={styles.emptyNotificationText}>
+                  Nenhuma notificação no momento.
+                </Text>
               </View>
             ) : (
-              <View style={[styles.notificationContent, notificacao.venceu ? styles.notificationWin : styles.notificationLose]}>
+              <View
+                style={[
+                  styles.notificationContent,
+                  notificacao.venceu
+                    ? styles.notificationWin
+                    : styles.notificationLose,
+                ]}
+              >
                 <Text style={styles.notificationGame}>🏆 Resultado do Bolão</Text>
-                <Text style={styles.notificationMessage}>{notificacao.mensagem}</Text>
+                <Text style={styles.notificationMessage}>
+                  {notificacao.mensagem}
+                </Text>
                 {notificacao.venceu && (
-                  <Text style={styles.notificationPrize}>💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}</Text>
+                  <Text style={styles.notificationPrize}>
+                    💰 Prêmio: R$ {Number(notificacao.premio).toFixed(2)}
+                  </Text>
                 )}
-                <Text style={styles.notificationHint}>Toque fora do card ou no ✕ para fechar.</Text>
+                <Text style={styles.notificationHint}>
+                  Toque fora do card ou no ✕ para fechar.
+                </Text>
               </View>
             )}
           </Pressable>
         </Pressable>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -497,6 +710,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 6,
   },
+  loadingText: {
+    marginTop: 10,
+    color: "#6B7280",
+    fontWeight: "bold",
+  },
+  emptyGameTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  emptyGameText: {
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
+    paddingHorizontal: 20,
+  },
   badge: {
     backgroundColor: "#FFD500",
     paddingHorizontal: 18,
@@ -514,7 +743,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#111827",
     marginBottom: 15,
-    textAlign: "center"
+    textAlign: "center",
   },
   teamsRow: {
     flexDirection: "row",
@@ -537,7 +766,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     marginBottom: 6,
-    resizeMode: "contain"
+    resizeMode: "contain",
   },
   teamName: {
     marginTop: 8,
