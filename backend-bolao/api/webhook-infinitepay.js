@@ -16,7 +16,6 @@ module.exports = async function handler(req, res) {
     console.log("Webhook recebido da InfinitePay:", JSON.stringify(body));
 
     const {
-      invoice_slug,
       amount,
       paid_amount,
       installments,
@@ -27,10 +26,15 @@ module.exports = async function handler(req, res) {
       items,
     } = body || {};
 
-    if (!order_nsu || !transaction_nsu || !invoice_slug) {
+    // A InfinitePay pode enviar como slug ou invoice_slug.
+    const invoiceSlug = body?.invoice_slug || body?.slug;
+
+    if (!order_nsu) {
+      console.log("Webhook sem order_nsu:", JSON.stringify(body));
+
       return res.status(400).json({
         success: false,
-        message: "Dados incompletos no webhook.",
+        message: "Webhook sem order_nsu.",
       });
     }
 
@@ -38,6 +42,8 @@ module.exports = async function handler(req, res) {
     const pagamentoSnap = await pagamentoRef.get();
 
     if (!pagamentoSnap.exists) {
+      console.log("Pedido não encontrado:", order_nsu);
+
       return res.status(400).json({
         success: false,
         message: "Pedido não encontrado.",
@@ -53,6 +59,21 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    if (!transaction_nsu || !invoiceSlug) {
+      await pagamentoRef.update({
+        status: "webhook_incomplete",
+        webhookRecebido: body,
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log("Webhook incompleto:", JSON.stringify(body));
+
+      return res.status(400).json({
+        success: false,
+        message: "Dados incompletos no webhook.",
+      });
+    }
+
     const checkResponse = await fetch(
       "https://api.checkout.infinitepay.io/payment_check",
       {
@@ -64,7 +85,7 @@ module.exports = async function handler(req, res) {
           handle: INFINITEPAY_HANDLE,
           order_nsu,
           transaction_nsu,
-          slug: invoice_slug,
+          slug: invoiceSlug,
         }),
       }
     );
@@ -115,7 +136,7 @@ module.exports = async function handler(req, res) {
       transaction.update(pagamentoRef, {
         status: "paid",
         pagoEm: admin.firestore.FieldValue.serverTimestamp(),
-        invoice_slug,
+        invoice_slug: invoiceSlug,
         amount: amount || null,
         paid_amount: paid_amount || null,
         installments: installments || null,
