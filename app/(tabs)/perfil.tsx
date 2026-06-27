@@ -12,12 +12,20 @@ import {
   Modal,
   TextInput,
   Linking,
+  ActivityIndicator,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "../../services/firebaseConfig";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 
-const CHECKOUT_INFINITEPAY_URL = "https://checkout.infinitepay.io/pitstoplanchepizzariaa/8wJ5hi2y41";
+const CREATE_CHECKOUT_URL =
+  "https://southamerica-east1-SEU_PROJETO.cloudfunctions.net/createInfinitePayCheckout";
 
 type PerfilStats = {
   totalPalpites: number;
@@ -32,6 +40,8 @@ export default function PerfilScreen() {
 
   const [modalDeposito, setModalDeposito] = useState(false);
   const [valorDeposito, setValorDeposito] = useState("10");
+  const [depositando, setDepositando] = useState(false);
+  const [saldoAtual, setSaldoAtual] = useState(0);
 
   const [stats, setStats] = useState<PerfilStats>({
     totalPalpites: 0,
@@ -42,67 +52,40 @@ export default function PerfilScreen() {
   });
 
   useEffect(() => {
-    if (!user?.email) return;
+    if (!user?.uid) return;
 
-    const emailLower = user.email.toLowerCase();
-    const apostasRef = collection(db, "apostas");
-    const qApostas = query(apostasRef, where("emailLower", "==", emailLower));
+    const userRef = doc(db, "usuarios", user.uid);
 
-    let totalPalpitesAtual = 0;
-    let ultimoPalpite = "";
-
-    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
-      totalPalpitesAtual = snapshot.size;
-
-      if (!snapshot.empty) {
-        const apostas = snapshot.docs.map((docItem) => docItem.data());
-
-        apostas.sort((a: any, b: any) => {
-          const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
-          const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
-          return dataB - dataA;
-        });
-
-        ultimoPalpite = apostas[0]?.placar
-          ? `Brasil ${apostas[0].placar} Argentina`
-          : "Nenhum palpite ainda";
-      } else {
-        ultimoPalpite = "Nenhum palpite ainda";
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setSaldoAtual(Number(user?.saldo || 0));
+        return;
       }
 
-      atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
+      const data = snapshot.data();
+      setSaldoAtual(Number(data.saldo || 0));
     });
 
-    const resultadosRef = collection(db, "resultados");
+    return () => unsubscribe();
+  }, [user?.uid]);
 
-    const unsubscribeResultados = onSnapshot(resultadosRef, () => {
-      atualizarStatsComResultados(totalPalpitesAtual, ultimoPalpite);
-    });
-
-    return () => {
-      unsubscribeApostas();
-      unsubscribeResultados();
-    };
-  }, [user]);
-
-  async function atualizarStatsComResultados(
-    totalPalpitesAtual: number,
-    ultimoPalpite: string
-  ) {
+  useEffect(() => {
     if (!user?.email) return;
 
     const emailLower = user.email.toLowerCase();
-    const resultadosRef = collection(db, "resultados");
 
-    const unsubscribe = onSnapshot(resultadosRef, (snapshot) => {
+    let totalPalpitesAtual = 0;
+    let ultimoPalpite = "Nenhum palpite ainda";
+    let resultadosDocs: any[] = [];
+
+    function recalcularStats() {
       let totalPontos = 0;
       let totalAcertos = 0;
       let melhorPalpite = ultimoPalpite || "Nenhum palpite ainda";
       let melhorPosicaoNumero: number | null = null;
       let melhorPontuacao = -1;
 
-      snapshot.docs.forEach((docItem) => {
-        const data = docItem.data();
+      resultadosDocs.forEach((data) => {
         const ranking = Array.isArray(data.ranking) ? data.ranking : [];
 
         const posicaoUsuario = ranking.findIndex((item: any) => {
@@ -116,7 +99,9 @@ export default function PerfilScreen() {
 
           totalPontos += pontos;
 
-          if (pontos > 0) totalAcertos += 1;
+          if (pontos > 0) {
+            totalAcertos += 1;
+          }
 
           const posicaoAtual = posicaoUsuario + 1;
 
@@ -146,16 +131,60 @@ export default function PerfilScreen() {
             ? `${melhorPosicaoNumero}º lugar no ranking`
             : "Aguardando resultado",
       });
+    }
 
-      unsubscribe();
+    const apostasRef = collection(db, "apostas");
+    const qApostas = query(apostasRef, where("emailLower", "==", emailLower));
+
+    const unsubscribeApostas = onSnapshot(qApostas, (snapshot) => {
+      totalPalpitesAtual = snapshot.size;
+
+      if (!snapshot.empty) {
+        const apostas = snapshot.docs.map((docItem) => docItem.data());
+
+        apostas.sort((a: any, b: any) => {
+          const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
+          const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+          return dataB - dataA;
+        });
+
+        ultimoPalpite = apostas[0]?.placar
+          ? `Brasil ${apostas[0].placar} Argentina`
+          : "Nenhum palpite ainda";
+      } else {
+        ultimoPalpite = "Nenhum palpite ainda";
+      }
+
+      recalcularStats();
     });
-  }
+
+    const resultadosRef = collection(db, "resultados");
+
+    const unsubscribeResultados = onSnapshot(resultadosRef, (snapshot) => {
+      resultadosDocs = snapshot.docs.map((docItem) => docItem.data());
+      recalcularStats();
+    });
+
+    return () => {
+      unsubscribeApostas();
+      unsubscribeResultados();
+    };
+  }, [user?.email]);
 
   function pegarMillis(data?: any) {
     if (!data) return 0;
     if (typeof data.toMillis === "function") return data.toMillis();
     if (data.seconds) return data.seconds * 1000;
-    return new Date(data).getTime();
+
+    const convertido = new Date(data).getTime();
+    return Number.isNaN(convertido) ? 0 : convertido;
+  }
+
+  function formatarSaldo(valor: number) {
+    return Number(valor || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   function abrirConfig() {
@@ -166,25 +195,52 @@ export default function PerfilScreen() {
   }
 
   async function abrirCheckoutDeposito() {
-    const valor = Number(valorDeposito.replace(",", "."));
+    try {
+      const valorLimpo = valorDeposito.replace(",", ".").trim();
+      const valor = Number(valorLimpo);
 
-    if (!valor || valor < 1) {
-      mostrarAlerta("Valor inválido", "Digite um valor válido para depositar.");
-      return;
-    }
+      if (!valor || valor < 1) {
+        mostrarAlerta("Valor inválido", "Digite um valor válido para depositar.");
+        return;
+      }
 
-    setModalDeposito(false);
+      if (!user?.uid) {
+        mostrarAlerta("Erro", "Você precisa estar logado para depositar.");
+        return;
+      }
 
-    // Cria o identificador do usuário para o Webhook saber quem pagou
-    const identificadorUsuario = user?.uid || user?.email?.toLowerCase().replace(/[^a-z0-9]/g, "");
-    
-    // Anexa o identificador e o valor na URL da InfinitePay
-    const urlComTracking = `${CHECKOUT_INFINITEPAY_URL}?reference_id=${identificadorUsuario}&amount=${valor}`;
-    
-    const abriu = await Linking.openURL(urlComTracking);
+      setDepositando(true);
 
-    if (!abriu) {
+      const response = await fetch(CREATE_CHECKOUT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          uid: user.uid,
+          nome: user.nome || "Usuário",
+          email: user.email || "",
+          valorReais: valor,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success || !data.url) {
+        mostrarAlerta(
+          "Erro",
+          data.message || "Não foi possível gerar o checkout."
+        );
+        return;
+      }
+
+      setModalDeposito(false);
+      await Linking.openURL(data.url);
+    } catch (error) {
+      console.log("Erro ao abrir checkout:", error);
       mostrarAlerta("Erro", "Não foi possível abrir o checkout.");
+    } finally {
+      setDepositando(false);
     }
   }
 
@@ -257,7 +313,9 @@ export default function PerfilScreen() {
         <View style={styles.balanceCard}>
           <View>
             <Text style={styles.balanceLabel}>Saldo</Text>
-            <Text style={styles.balanceValue}>{user?.saldo || 0} BRL</Text>
+            <Text style={styles.balanceValue}>
+              {formatarSaldo(saldoAtual)} BRL
+            </Text>
             <Text style={styles.balanceInfo}>
               Saldo atualizado online pelo Firebase.
             </Text>
@@ -269,8 +327,11 @@ export default function PerfilScreen() {
         <TouchableOpacity
           style={styles.depositButton}
           onPress={() => setModalDeposito(true)}
+          disabled={depositando}
         >
-          <Text style={styles.depositText}>Depositar via Pix</Text>
+          <Text style={styles.depositText}>
+            {depositando ? "Gerando Pix..." : "Depositar via Pix"}
+          </Text>
         </TouchableOpacity>
 
         {user?.role === "admin" && (
@@ -420,18 +481,28 @@ export default function PerfilScreen() {
               onChangeText={setValorDeposito}
               keyboardType="numeric"
               placeholder="Ex: 10"
+              editable={!depositando}
             />
 
             <TouchableOpacity
-              style={styles.modalDepositButton}
+              style={[
+                styles.modalDepositButton,
+                depositando && styles.buttonDisabled,
+              ]}
               onPress={abrirCheckoutDeposito}
+              disabled={depositando}
             >
-              <Text style={styles.modalDepositText}>Continuar para Pix</Text>
+              {depositando ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.modalDepositText}>Continuar para Pix</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => setModalDeposito(false)}
+              disabled={depositando}
             >
               <Text style={styles.cancelText}>Cancelar</Text>
             </TouchableOpacity>
@@ -571,7 +642,12 @@ const styles = StyleSheet.create({
   },
 
   balanceLabel: { color: "#DFFFEA", fontSize: 14, fontWeight: "700" },
-  balanceValue: { color: "#FFD500", fontSize: 32, fontWeight: "900", marginTop: 4 },
+  balanceValue: {
+    color: "#FFD500",
+    fontSize: 32,
+    fontWeight: "900",
+    marginTop: 4,
+  },
 
   balanceInfo: {
     color: "#DFFFEA",
@@ -637,7 +713,12 @@ const styles = StyleSheet.create({
   performanceIcon: { fontSize: 28, marginRight: 12 },
   performanceInfo: { flex: 1 },
   performanceTitle: { color: "#111827", fontSize: 15, fontWeight: "900" },
-  performanceText: { color: "#6B7280", fontSize: 13, fontWeight: "700", marginTop: 3 },
+  performanceText: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 3,
+  },
 
   menuBox: {
     backgroundColor: "#FFFFFF",
@@ -657,7 +738,12 @@ const styles = StyleSheet.create({
   menuOptionIcon: { fontSize: 27, marginRight: 12 },
   menuOptionTextBox: { flex: 1 },
   menuOptionTitle: { color: "#111827", fontSize: 16, fontWeight: "900" },
-  menuOptionSubtitle: { color: "#6B7280", fontSize: 12, fontWeight: "700", marginTop: 3 },
+  menuOptionSubtitle: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
   arrow: { color: "#9CA3AF", fontSize: 30, fontWeight: "700" },
 
   logoutButton: {
@@ -681,8 +767,18 @@ const styles = StyleSheet.create({
     borderColor: "#FFD500",
   },
 
-  warningTitle: { color: "#111827", fontSize: 16, fontWeight: "900", marginBottom: 6 },
-  warningText: { color: "#4B5563", fontSize: 13, fontWeight: "600", lineHeight: 20 },
+  warningTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+  warningText: {
+    color: "#4B5563",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
   bottomSpace: { height: 20 },
 
   modalOverlay: {
@@ -733,6 +829,10 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
 
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+
   modalDepositText: {
     color: "#FFFFFF",
     fontSize: 16,
@@ -769,6 +869,16 @@ const styles = StyleSheet.create({
   menuItem: { flex: 1, alignItems: "center", justifyContent: "center" },
   menuItemActive: { flex: 1, alignItems: "center", justifyContent: "center" },
   menuIcon: { fontSize: 22 },
-  menuText: { fontSize: 11, color: "#6B7280", marginTop: 3, fontWeight: "700" },
-  menuTextActive: { fontSize: 11, color: "#00A344", marginTop: 3, fontWeight: "900" },
+  menuText: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 3,
+    fontWeight: "700",
+  },
+  menuTextActive: {
+    fontSize: 11,
+    color: "#00A344",
+    marginTop: 3,
+    fontWeight: "900",
+  },
 });

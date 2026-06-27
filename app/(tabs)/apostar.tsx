@@ -20,13 +20,13 @@ import {
   StatusBar,
   ScrollView,
   ActivityIndicator,
-  Image
+  Image,
 } from "react-native";
 
 const VALOR_APOSTA = 10;
 
 // ============================================================================
-// COMPONENTE INTERNO: CARD DE APOSTA (Renderiza 1 para cada jogo aberto)
+// COMPONENTE INTERNO: CARD DE APOSTA
 // ============================================================================
 function CardAposta({ jogo }: { jogo: any }) {
   const { user, atualizarSaldoUsuario } = useAuth();
@@ -36,16 +36,32 @@ function CardAposta({ jogo }: { jogo: any }) {
   const [jaApostou, setJaApostou] = useState(false);
   const [alteracaoUsada, setAlteracaoUsada] = useState(false);
   const [placarApostado, setPlacarApostado] = useState("");
+  const [agoraTick, setAgoraTick] = useState(Date.now());
 
-  const apostaBloqueada = jaApostou && alteracaoUsada;
+  const jogoComecou =
+    typeof jogo.startMillis === "number" && agoraTick >= jogo.startMillis;
+
+  const apostaBloqueada = jogoComecou || (jaApostou && alteracaoUsada);
 
   useEffect(() => {
     carregarAposta();
   }, [user, jogo.id]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAgoraTick(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   function getApostaId() {
     if (!user) return "";
-    const identificador = user.uid ? user.uid : user.email.toLowerCase().replace(/[\/\\.#$[\]]/g, "_");
+
+    const identificador = user.uid
+      ? user.uid
+      : user.email.toLowerCase().replace(/[\/\\.#$[\]]/g, "_");
+
     return `${jogo.id}_${identificador}`;
   }
 
@@ -64,28 +80,66 @@ function CardAposta({ jogo }: { jogo: any }) {
       setAlteracaoUsada(!!aposta.jaAlterou);
       setPlacarApostado(aposta.placar || "");
 
-      if (typeof aposta.golsCasa === "number") setGolsCasa(aposta.golsCasa);
-      if (typeof aposta.golsFora === "number") setGolsFora(aposta.golsFora);
+      if (typeof aposta.golsCasa === "number") {
+        setGolsCasa(aposta.golsCasa);
+      }
 
+      if (typeof aposta.golsFora === "number") {
+        setGolsFora(aposta.golsFora);
+      }
     } catch (error) {
       console.log("Erro ao carregar aposta:", error);
     }
   }
 
+  function formatarHorario(millis: number) {
+    return new Date(millis).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function formatarContagem(millis: number) {
+    if (millis <= 0) return "agora";
+
+    const totalMinutos = Math.ceil(millis / 60000);
+    const dias = Math.floor(totalMinutos / 1440);
+    const horas = Math.floor((totalMinutos % 1440) / 60);
+    const minutos = totalMinutos % 60;
+
+    if (dias > 0) {
+      return `${dias}d ${horas}h ${minutos}min`;
+    }
+
+    if (horas > 0) {
+      return `${horas}h ${minutos}min`;
+    }
+
+    return `${minutos}min`;
+  }
+
   function aumentarCasa() {
-    if (!apostaBloqueada) setGolsCasa((v) => v + 1);
+    if (!apostaBloqueada) {
+      setGolsCasa((v) => v + 1);
+    }
   }
 
   function diminuirCasa() {
-    if (!apostaBloqueada && golsCasa > 0) setGolsCasa((v) => v - 1);
+    if (!apostaBloqueada && golsCasa > 0) {
+      setGolsCasa((v) => v - 1);
+    }
   }
 
   function aumentarFora() {
-    if (!apostaBloqueada) setGolsFora((v) => v + 1);
+    if (!apostaBloqueada) {
+      setGolsFora((v) => v + 1);
+    }
   }
 
   function diminuirFora() {
-    if (!apostaBloqueada && golsFora > 0) setGolsFora((v) => v - 1);
+    if (!apostaBloqueada && golsFora > 0) {
+      setGolsFora((v) => v - 1);
+    }
   }
 
   async function confirmarPalpite() {
@@ -95,17 +149,31 @@ function CardAposta({ jogo }: { jogo: any }) {
         return;
       }
 
+      if (typeof jogo.startMillis === "number" && Date.now() >= jogo.startMillis) {
+        mostrarAlerta(
+          "Palpites encerrados",
+          "Esse jogo já começou. Só era possível apostar até o horário de início."
+        );
+        return;
+      }
+
       const apostaRef = doc(db, "apostas", getApostaId());
       const apostaSnap = await getDoc(apostaRef);
       const apostaExistente = apostaSnap.exists() ? apostaSnap.data() : null;
 
       if (!apostaExistente && user.saldo < VALOR_APOSTA) {
-        mostrarAlerta("Saldo insuficiente", `Você precisa ter pelo menos ${VALOR_APOSTA} BRL para apostar.`);
+        mostrarAlerta(
+          "Saldo insuficiente",
+          `Você precisa ter pelo menos ${VALOR_APOSTA} BRL para apostar.`
+        );
         return;
       }
 
       if (apostaExistente && apostaExistente.jaAlterou) {
-        mostrarAlerta("Alteração já usada", "Você só pode alterar seu palpite uma vez.");
+        mostrarAlerta(
+          "Alteração já usada",
+          "Você só pode alterar seu palpite uma vez."
+        );
         return;
       }
 
@@ -128,7 +196,9 @@ function CardAposta({ jogo }: { jogo: any }) {
         atualizadoEm: serverTimestamp(),
       };
 
-      if (!apostaExistente) dadosAposta.criadoEm = serverTimestamp();
+      if (!apostaExistente) {
+        dadosAposta.criadoEm = serverTimestamp();
+      }
 
       await setDoc(apostaRef, dadosAposta, { merge: true });
 
@@ -141,7 +211,18 @@ function CardAposta({ jogo }: { jogo: any }) {
       setPlacarApostado(placar);
 
       const msg = `${jogo.timeCasa.sigla} ${placar} ${jogo.timeFora.sigla}`;
-      mostrarAlerta(apostaExistente ? "Palpite alterado!" : "Palpite salvo!", msg);
+
+      mostrarAlerta(
+        apostaExistente ? "Palpite alterado!" : "Palpite salvo!",
+        msg
+      );
+
+      router.push({
+        pathname: "/bolao",
+        params: {
+          focusGameId: jogo.id,
+        },
+      });
     } catch (error) {
       console.log("Erro ao salvar aposta:", error);
       mostrarAlerta("Erro", "Não foi possível salvar a aposta.");
@@ -152,30 +233,75 @@ function CardAposta({ jogo }: { jogo: any }) {
     <View style={styles.cardContainer}>
       <View style={styles.matchMiniCard}>
         <View style={styles.miniTeam}>
-          <Image source={{ uri: jogo.timeCasa.bandeira }} style={styles.miniFlagImg} />
-          <Text style={styles.miniTeamName}>{jogo.timeCasa.nome.toUpperCase()}</Text>
+          <Image
+            source={{ uri: jogo.timeCasa.bandeira }}
+            style={styles.miniFlagImg}
+          />
+          <Text style={styles.miniTeamName}>
+            {jogo.timeCasa.nome.toUpperCase()}
+          </Text>
         </View>
 
         <Text style={styles.miniVs}>X</Text>
 
         <View style={styles.miniTeam}>
-          <Text style={styles.miniTeamName}>{jogo.timeFora.nome.toUpperCase()}</Text>
-          <Image source={{ uri: jogo.timeFora.bandeira }} style={styles.miniFlagImg} />
+          <Text style={styles.miniTeamName}>
+            {jogo.timeFora.nome.toUpperCase()}
+          </Text>
+          <Image
+            source={{ uri: jogo.timeFora.bandeira }}
+            style={styles.miniFlagImg}
+          />
         </View>
       </View>
 
-      <Text style={styles.dateText}>{jogo.data} • {jogo.horario}</Text>
+      <Text style={styles.dateText}>
+        {jogo.data} • {jogo.horario}
+      </Text>
+
+      {typeof jogo.startMillis === "number" && (
+        <View style={[styles.timeBox, jogoComecou && styles.timeBoxClosed]}>
+          <Text style={styles.timeBoxTitle}>
+            {jogoComecou
+              ? "Palpites encerrados"
+              : `Começa em ${formatarContagem(jogo.startMillis - agoraTick)}`}
+          </Text>
+
+          <Text style={styles.timeBoxText}>
+            {jogoComecou
+              ? "Esse jogo já começou."
+              : `Você pode apostar até ${formatarHorario(jogo.startMillis)}.`}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.scoreAreaWrapper}>
         <View style={styles.scoreColumn}>
-          <Text style={[styles.scoreTeam, { color: "#1B4D3E" }]}>{jogo.timeCasa.sigla}</Text>
+          <Text style={[styles.scoreTeam, { color: "#1B4D3E" }]}>
+            {jogo.timeCasa.sigla}
+          </Text>
+
           <View style={styles.scoreBox}>
-            <TouchableOpacity style={styles.arrowButton} onPress={aumentarCasa} disabled={apostaBloqueada}>
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>˄</Text>
+            <TouchableOpacity
+              style={styles.arrowButton}
+              onPress={aumentarCasa}
+              disabled={apostaBloqueada}
+            >
+              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+                ˄
+              </Text>
             </TouchableOpacity>
+
             <Text style={styles.scoreNumber}>{golsCasa}</Text>
-            <TouchableOpacity style={styles.arrowButton} onPress={diminuirCasa} disabled={apostaBloqueada}>
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>˅</Text>
+
+            <TouchableOpacity
+              style={styles.arrowButton}
+              onPress={diminuirCasa}
+              disabled={apostaBloqueada}
+            >
+              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+                ˅
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -185,14 +311,31 @@ function CardAposta({ jogo }: { jogo: any }) {
         </View>
 
         <View style={styles.scoreColumn}>
-          <Text style={[styles.scoreTeam, { color: "#111827" }]}>{jogo.timeFora.sigla}</Text>
+          <Text style={[styles.scoreTeam, { color: "#111827" }]}>
+            {jogo.timeFora.sigla}
+          </Text>
+
           <View style={styles.scoreBox}>
-            <TouchableOpacity style={styles.arrowButton} onPress={aumentarFora} disabled={apostaBloqueada}>
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>˄</Text>
+            <TouchableOpacity
+              style={styles.arrowButton}
+              onPress={aumentarFora}
+              disabled={apostaBloqueada}
+            >
+              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+                ˄
+              </Text>
             </TouchableOpacity>
+
             <Text style={styles.scoreNumber}>{golsFora}</Text>
-            <TouchableOpacity style={styles.arrowButton} onPress={diminuirFora} disabled={apostaBloqueada}>
-              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>˅</Text>
+
+            <TouchableOpacity
+              style={styles.arrowButton}
+              onPress={diminuirFora}
+              disabled={apostaBloqueada}
+            >
+              <Text style={[styles.arrowIcon, apostaBloqueada && styles.disabledText]}>
+                ˅
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -200,13 +343,30 @@ function CardAposta({ jogo }: { jogo: any }) {
 
       {jaApostou && (
         <View style={styles.apostaSalvaBox}>
-          <Text style={styles.apostaSalvaTitle}>✅ Você já apostou neste jogo</Text>
-          <Text style={styles.apostaSalvaText}>{jogo.timeCasa.sigla} {placarApostado} {jogo.timeFora.sigla}</Text>
-          {!alteracaoUsada && (
-            <Text style={styles.apostaAlteracaoText}>Você ainda pode alterar seu palpite uma vez.</Text>
+          <Text style={styles.apostaSalvaTitle}>
+            ✅ Você já apostou neste jogo
+          </Text>
+
+          <Text style={styles.apostaSalvaText}>
+            {jogo.timeCasa.sigla} {placarApostado} {jogo.timeFora.sigla}
+          </Text>
+
+          {!alteracaoUsada && !jogoComecou && (
+            <Text style={styles.apostaAlteracaoText}>
+              Você ainda pode alterar seu palpite uma vez.
+            </Text>
           )}
+
           {alteracaoUsada && (
-            <Text style={styles.apostaAlteracaoText}>Alteração já utilizada.</Text>
+            <Text style={styles.apostaAlteracaoText}>
+              Alteração já utilizada.
+            </Text>
+          )}
+
+          {jogoComecou && (
+            <Text style={styles.apostaAlteracaoText}>
+              O jogo começou. Não é mais possível alterar.
+            </Text>
           )}
         </View>
       )}
@@ -220,14 +380,17 @@ function CardAposta({ jogo }: { jogo: any }) {
         onPress={confirmarPalpite}
         disabled={apostaBloqueada}
       >
-        <Text style={[
-          styles.confirmText,
-          jaApostou && styles.confirmTextDone,
-          apostaBloqueada && styles.confirmTextDisabled,
-        ]}>
-          {!jaApostou && "Confirmar palpite"}
-          {jaApostou && !alteracaoUsada && "Alterar palpite uma vez"}
-          {jaApostou && alteracaoUsada && "✅ Palpite realizado"}
+        <Text
+          style={[
+            styles.confirmText,
+            jaApostou && styles.confirmTextDone,
+            apostaBloqueada && styles.confirmTextDisabled,
+          ]}
+        >
+          {jogoComecou && "🔒 Palpites encerrados"}
+          {!jogoComecou && !jaApostou && "Confirmar palpite"}
+          {!jogoComecou && jaApostou && !alteracaoUsada && "Alterar palpite uma vez"}
+          {!jogoComecou && jaApostou && alteracaoUsada && "✅ Palpite realizado"}
         </Text>
       </TouchableOpacity>
     </View>
@@ -245,70 +408,129 @@ export default function ApostarScreen() {
     const buscarJogos = async () => {
       try {
         const agora = new Date();
-        const limite48h = new Date(agora.getTime() + (48 * 60 * 60 * 1000));
-        
-        const fData = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(agora)}-${fData(limite48h)}`;
+        const limite48h = new Date(agora.getTime() + 48 * 60 * 60 * 1000);
+
+        const fData = (d: Date) =>
+          `${d.getFullYear()}${String(d.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}${String(d.getDate()).padStart(2, "0")}`;
+
+        const urlESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fData(
+          agora
+        )}-${fData(limite48h)}`;
 
         const response = await fetch(urlESPN);
         const data = await response.json();
 
-        // Checa no banco de dados quem o Admin bloqueou ou abriu
         const statusSnapshot = await getDocs(collection(db, "status_apostas"));
+
         const statusFirebase: Record<string, boolean> = {};
-        statusSnapshot.forEach(docSnap => {
+
+        statusSnapshot.forEach((docSnap) => {
           statusFirebase[docSnap.id] = docSnap.data().aberta;
         });
 
-        const filtrados = data.events.reduce((acc: any[], event: any) => {
+        const filtrados = (data.events || []).reduce((acc: any[], event: any) => {
           const dataJogo = new Date(event.date);
-          const status = event.status.type.state; 
-          const competidores = event.competitions[0].competitors;
-          const timeCasa = competidores.find((c: any) => c.homeAway === 'home');
-          const timeFora = competidores.find((c: any) => c.homeAway === 'away');
+          const status = event.status?.type?.state;
 
-          if (dataJogo > limite48h || status === 'post') return acc;
+          const competidores = event.competitions?.[0]?.competitors || [];
+
+          const timeCasa = competidores.find(
+            (c: any) => c.homeAway === "home"
+          );
+
+          const timeFora = competidores.find(
+            (c: any) => c.homeAway === "away"
+          );
+
+          if (!timeCasa || !timeFora) return acc;
+
+          // Não mostra jogo fora das próximas 48 horas
+          if (dataJogo > limite48h) return acc;
+
+          // Não mostra jogo finalizado
+          if (status === "post") return acc;
+
+          // REGRA PRINCIPAL:
+          // se o jogo já começou, não aparece mais na tela Apostar
+          if (dataJogo.getTime() <= agora.getTime()) return acc;
 
           const jaTemStatus = statusFirebase[event.id] !== undefined;
-          const isOpen = jaTemStatus ? statusFirebase[event.id] : (status === 'pre');
 
-          // SÓ ADICIONA NA TELA SE ESTIVER ABERTO PARA APOSTA
+          const isOpen = jaTemStatus
+            ? statusFirebase[event.id]
+            : status === "pre";
+
           if (isOpen) {
             acc.push({
               id: event.id,
-              data: dataJogo.toLocaleDateString('pt-BR'),
-              horario: dataJogo.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-              timeCasa: { nome: timeCasa.team.displayName, sigla: timeCasa.team.abbreviation, bandeira: timeCasa.team.logo },
-              timeFora: { nome: timeFora.team.displayName, sigla: timeFora.team.abbreviation, bandeira: timeFora.team.logo }
+              data: dataJogo.toLocaleDateString("pt-BR"),
+              horario: dataJogo.toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+              startMillis: dataJogo.getTime(),
+              timeCasa: {
+                nome: timeCasa.team.displayName,
+                sigla: timeCasa.team.abbreviation,
+                bandeira:
+                  timeCasa.team.logo || "https://via.placeholder.com/50",
+              },
+              timeFora: {
+                nome: timeFora.team.displayName,
+                sigla: timeFora.team.abbreviation,
+                bandeira:
+                  timeFora.team.logo || "https://via.placeholder.com/50",
+              },
             });
           }
+
           return acc;
         }, []);
 
         setJogosAbertos(filtrados);
-        setLoading(false);
       } catch (error) {
         console.error("Erro ao carregar jogos:", error);
+      } finally {
         setLoading(false);
       }
     };
 
     buscarJogos();
+
+    const interval = setInterval(buscarJogos, 60000);
+
+    return () => clearInterval(interval);
   }, []);
 
   function abrirAjuda() {
     mostrarAlerta(
       "Como funciona?",
-      "Escolha o placar exato. Cada usuário pode enviar apenas um palpite por jogo. Após apostar, você ainda pode alterar uma única vez antes do prazo final."
+      "Escolha o placar exato. Cada usuário pode enviar apenas um palpite por jogo. Após apostar, você ainda pode alterar uma única vez antes do jogo começar."
     );
   }
 
-  // TELA DE CARREGAMENTO
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}>
+      <SafeAreaView
+        style={[
+          styles.safe,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
         <ActivityIndicator size="large" color="#006B2E" />
-        <Text style={{ marginTop: 12, color: '#006B2E', fontWeight: 'bold' }}>Carregando jogos...</Text>
+
+        <Text
+          style={{
+            marginTop: 12,
+            color: "#006B2E",
+            fontWeight: "bold",
+          }}
+        >
+          Carregando jogos...
+        </Text>
       </SafeAreaView>
     );
   }
@@ -321,42 +543,59 @@ export default function ApostarScreen() {
         <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
+
         <Text style={styles.headerTitle}>Fazer meu palpite</Text>
+
         <TouchableOpacity style={styles.helpCircle} onPress={abrirAjuda}>
           <Text style={styles.helpText}>?</Text>
         </TouchableOpacity>
       </View>
 
-      {/* VERIFICAÇÃO: TEM JOGO ABERTO OU TELA VAZIA? */}
       {jogosAbertos.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.padlock}>🔒</Text>
-          <Text style={styles.emptyText}>Nenhuma aposta disponível no momento</Text>
+
+          <Text style={styles.emptyText}>
+            Nenhuma aposta disponível no momento
+          </Text>
         </View>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.infoBox}>
             <Text style={styles.infoIcon}>🎯</Text>
+
             <View style={{ flex: 1 }}>
-              <Text style={styles.infoTitle}>Acerta o placar e leva o bolão!</Text>
-              <Text style={styles.infoText}>Bateu o placar exato? O prêmio é todo seu.</Text>
+              <Text style={styles.infoTitle}>
+                Acerta o placar e leva o bolão!
+              </Text>
+
+              <Text style={styles.infoText}>
+                Bateu o placar exato? O prêmio é todo seu.
+              </Text>
             </View>
           </View>
+
           <Text style={styles.sectionTitle}>Jogos Abertos ⓘ</Text>
 
-          {/* RENDERIZA UM CARD PARA CADA JOGO ABERTO */}
           {jogosAbertos.map((jogo) => (
             <CardAposta key={jogo.id} jogo={jogo} />
           ))}
 
-          <Text style={styles.feeText}>⚠️ Aposta fictícia: {VALOR_APOSTA} BRL por pessoa (por jogo)</Text>
+          <Text style={styles.feeText}>
+            ⚠️ Aposta fictícia: {VALOR_APOSTA} BRL por pessoa por jogo
+          </Text>
         </ScrollView>
       )}
 
-      {/* MENU INFERIOR */}
       <View style={styles.bottomMenu}>
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/")}
+        >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
         </TouchableOpacity>
@@ -366,17 +605,26 @@ export default function ApostarScreen() {
           <Text style={styles.menuTextActive}>Apostar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/bolao")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/bolao")}
+        >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/ranking")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/ranking")}
+        >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/perfil")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/perfil")}
+        >
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
@@ -390,6 +638,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F7F6",
   },
+
   header: {
     backgroundColor: "#006B2E",
     paddingHorizontal: 16,
@@ -399,16 +648,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+
   back: {
     color: "#FFFFFF",
     fontSize: 28,
     fontWeight: "900",
   },
+
   headerTitle: {
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "900",
   },
+
   helpCircle: {
     width: 28,
     height: 28,
@@ -418,24 +670,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   helpText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "900",
   },
 
-  // ESTILOS TELA VAZIA (CADEADO)
   emptyContainer: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
-    paddingBottom: 80, 
+    paddingBottom: 80,
   },
+
   padlock: {
     fontSize: 65,
     marginBottom: 16,
   },
+
   emptyText: {
     fontSize: 16,
     color: "#6B7280",
@@ -444,15 +698,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
 
-  // ESTILOS CONTEÚDO SCROLL
   scroll: {
     flex: 1,
   },
+
   scrollContent: {
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 98,
   },
+
   sectionTitle: {
     color: "#111827",
     fontSize: 14,
@@ -460,8 +715,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 10,
   },
-  
-  // ESTILOS DO CARD INDIVIDUAL
+
   cardContainer: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -471,6 +725,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
+
   matchMiniCard: {
     backgroundColor: "#F9FAFB",
     borderRadius: 10,
@@ -481,92 +736,139 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
+
   miniTeam: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
+
   miniFlagImg: {
     width: 30,
     height: 20,
     borderRadius: 4,
-    resizeMode: 'contain',
+    resizeMode: "contain",
     borderWidth: 1,
-    borderColor: '#E5E7EB'
+    borderColor: "#E5E7EB",
   },
+
   miniTeamName: {
     fontSize: 11,
     fontWeight: "900",
     color: "#111827",
   },
+
   miniVs: {
     fontSize: 13,
     fontWeight: "900",
     color: "#111827",
   },
+
   dateText: {
     textAlign: "center",
     color: "#6B7280",
     fontSize: 11,
     fontWeight: "700",
     marginTop: 8,
-    marginBottom: 14,
+    marginBottom: 10,
   },
+
+  timeBox: {
+    backgroundColor: "#E7FBEF",
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#B7E4C7",
+    alignItems: "center",
+  },
+
+  timeBoxClosed: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#D1D5DB",
+  },
+
+  timeBoxTitle: {
+    color: "#006B2E",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  timeBoxText: {
+    color: "#4B5563",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+    textAlign: "center",
+  },
+
   scoreAreaWrapper: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
   },
+
   scoreColumn: {
     alignItems: "center",
   },
+
   scoreTeam: {
     fontSize: 12,
     fontWeight: "900",
     marginBottom: 8,
     letterSpacing: 0.5,
   },
+
   scoreBox: {
     width: 90,
     height: 140,
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
     borderWidth: 4,
-    borderColor: "#F4F5F7", 
+    borderColor: "#F4F5F7",
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 10,
   },
+
   scoreXContainer: {
     marginHorizontal: 16,
-    paddingTop: 20, 
+    paddingTop: 20,
   },
+
   scoreX: {
     color: "#111827",
     fontSize: 28,
     fontWeight: "900",
   },
+
   arrowButton: {
     width: 60,
     height: 30,
     alignItems: "center",
     justifyContent: "center",
   },
+
   arrowIcon: {
     color: "#111827",
     fontSize: 20,
     fontWeight: "900",
   },
+
   disabledText: {
     color: "#D1D5DB",
   },
+
   scoreNumber: {
     color: "#111827",
     fontSize: 46,
     fontWeight: "900",
     includeFontPadding: false,
   },
+
   apostaSalvaBox: {
     backgroundColor: "#E7FBEF",
     borderRadius: 14,
@@ -575,12 +877,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#B7E4C7",
   },
+
   apostaSalvaTitle: {
     color: "#006B2E",
     fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
   },
+
   apostaSalvaText: {
     color: "#111827",
     fontSize: 12,
@@ -588,6 +892,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
+
   apostaAlteracaoText: {
     color: "#4B5563",
     fontSize: 10,
@@ -595,6 +900,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
+
   infoBox: {
     backgroundColor: "#EAF3FF",
     borderRadius: 13,
@@ -604,21 +910,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#BFD7FF",
   },
+
   infoIcon: {
     fontSize: 24,
     marginRight: 10,
   },
+
   infoTitle: {
     color: "#1E3A8A",
     fontSize: 13,
     fontWeight: "900",
   },
+
   infoText: {
     color: "#4B5563",
     fontSize: 11,
     fontWeight: "700",
     marginTop: 2,
   },
+
   confirmButton: {
     backgroundColor: "#006B2E",
     borderRadius: 14,
@@ -628,28 +938,34 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
   },
+
   confirmDisabled: {
     backgroundColor: "#9CA3AF",
     borderColor: "#9CA3AF",
   },
+
   confirmText: {
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "900",
   },
+
   confirmButtonDone: {
     backgroundColor: "#D1FAE5",
     borderWidth: 2,
     borderColor: "#10B981",
     opacity: 0.9,
   },
+
   confirmTextDone: {
     color: "#065F46",
     fontWeight: "900",
   },
+
   confirmTextDisabled: {
     color: "#FFFFFF",
   },
+
   feeText: {
     color: "#9CA3AF",
     fontSize: 11,
@@ -657,6 +973,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 10,
   },
+
   bottomMenu: {
     position: "absolute",
     bottom: 0,
@@ -671,25 +988,30 @@ const styles = StyleSheet.create({
     borderTopColor: "#E5E7EB",
     paddingBottom: 8,
   },
+
   menuItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
+
   menuItemActive: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
+
   menuIcon: {
     fontSize: 20,
   },
+
   menuText: {
     fontSize: 10,
     color: "#6B7280",
     marginTop: 2,
     fontWeight: "700",
   },
+
   menuTextActive: {
     fontSize: 10,
     color: "#00A344",
