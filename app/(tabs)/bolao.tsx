@@ -84,6 +84,7 @@ export default function BolaoScreen() {
   const [apostas, setApostas] = useState<Aposta[]>([]);
   const [carregandoJogo, setCarregandoJogo] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [jogoSelecionadoId, setJogoSelecionadoId] = useState("");
   const [agoraTick, setAgoraTick] = useState(Date.now());
 
   const { width: windowWidth } = useWindowDimensions();
@@ -100,6 +101,24 @@ export default function BolaoScreen() {
   }, [windowWidth]);
 
   const pulse = useRef(new Animated.Value(1)).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+  }).current;
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const primeiroVisivel = viewableItems?.[0];
+
+    if (!primeiroVisivel) return;
+
+    if (typeof primeiroVisivel.index === "number") {
+      setCurrentIndex(primeiroVisivel.index);
+    }
+
+    if (primeiroVisivel.item?.id) {
+      setJogoSelecionadoId(primeiroVisivel.item.id);
+    }
+  }).current;
 
   useEffect(() => {
     const animacao = Animated.loop(
@@ -344,17 +363,43 @@ export default function BolaoScreen() {
         if (a.apostasAbertas && !b.apostasAbertas) return -1;
         if (!a.apostasAbertas && b.apostasAbertas) return 1;
 
+        if (b.totalBolao !== a.totalBolao) return b.totalBolao - a.totalBolao;
+        if (b.totalParticipantes !== a.totalParticipantes) {
+          return b.totalParticipantes - a.totalParticipantes;
+        }
+
         return a.startMillis - b.startMillis;
       });
   }, [jogos, apostas, user?.email, user?.uid, focusGameId]);
 
   useEffect(() => {
+    if (jogosDoBolao.length === 0) {
+      setCurrentIndex(0);
+      setJogoSelecionadoId("");
+      return;
+    }
+
+    const aindaExiste = jogosDoBolao.some(
+      (jogo) => jogo.id === jogoSelecionadoId
+    );
+
+    if (!jogoSelecionadoId || !aindaExiste) {
+      setCurrentIndex(0);
+      setJogoSelecionadoId(jogosDoBolao[0].id);
+      return;
+    }
+
     if (currentIndex > jogosDoBolao.length - 1) {
       setCurrentIndex(0);
+      setJogoSelecionadoId(jogosDoBolao[0].id);
     }
-  }, [jogosDoBolao.length, currentIndex]);
+  }, [jogosDoBolao, currentIndex, jogoSelecionadoId]);
 
-  const jogoSelecionado = jogosDoBolao[currentIndex] || null;
+  const jogoSelecionado =
+    jogosDoBolao.find((jogo) => jogo.id === jogoSelecionadoId) ||
+    jogosDoBolao[currentIndex] ||
+    null;
+
   const apostasSelecionadas = jogoSelecionado?.apostas || [];
 
   function pegarMillis(data?: any) {
@@ -460,8 +505,22 @@ export default function BolaoScreen() {
   }
 
   function handleScrollEnd(event: any) {
-    const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
-    setCurrentIndex(index);
+    const indexCalculado = Math.round(
+      event.nativeEvent.contentOffset.x / cardWidth
+    );
+
+    const indexSeguro = Math.max(
+      0,
+      Math.min(indexCalculado, jogosDoBolao.length - 1)
+    );
+
+    const jogoAtual = jogosDoBolao[indexSeguro];
+
+    setCurrentIndex(indexSeguro);
+
+    if (jogoAtual?.id) {
+      setJogoSelecionadoId(jogoAtual.id);
+    }
   }
 
   function renderBolaoCard({ item }: { item: JogoBolao }) {
@@ -591,6 +650,8 @@ export default function BolaoScreen() {
               }
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={handleScrollEnd}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
               renderItem={renderBolaoCard}
             />
 
