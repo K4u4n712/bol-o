@@ -727,7 +727,7 @@ export default function ApostarScreen() {
           ))}
 
           <Text style={styles.feeText}>
-            ⚠️ Aposta fictícia: {VALOR_APOSTA} BRL por pessoa por jogo
+            ⚠️ Aposta Real: {VALOR_APOSTA} BRL por pessoa por jogo
           </Text>
         </ScrollView>
       )}
