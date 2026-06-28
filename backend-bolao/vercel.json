@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "echo \"Backend sem build\""
+}
