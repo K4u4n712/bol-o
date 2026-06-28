@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -65,11 +67,36 @@ export default function PagamentoRetornoScreen() {
     return valor ? String(valor) : "";
   }, [params.order_nsu]);
 
+  const deepLinkApp = useMemo(() => {
+    if (orderNsu) {
+      return `appbolao://pagamento-retorno?order_nsu=${encodeURIComponent(orderNsu)}`;
+    }
+
+    return "appbolao://pagamento-retorno";
+  }, [orderNsu]);
+
   const [statusTela, setStatusTela] = useState<PagamentoStatus>("carregando");
   const [mensagem, setMensagem] = useState(
     "Estamos confirmando seu pagamento. Aguarde alguns segundos..."
   );
   const [valorPago, setValorPago] = useState<number | null>(null);
+  const [tentouAbrirApp, setTentouAbrirApp] = useState(false);
+
+  // Quando o retorno abrir no navegador/PWA, tenta mandar para o APK instalado.
+  // Se não tiver APK instalado, continua normalmente no PWA.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+
+    const timer = setTimeout(() => {
+      setTentouAbrirApp(true);
+
+      Linking.openURL(deepLinkApp).catch(() => {
+        console.log("Não foi possível abrir o APK automaticamente.");
+      });
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [deepLinkApp]);
 
   useEffect(() => {
     if (!orderNsu) {
@@ -80,7 +107,7 @@ export default function PagamentoRetornoScreen() {
 
       const timer = setTimeout(() => {
         router.replace("/perfil");
-      }, 5000);
+      }, 6000);
 
       return () => clearTimeout(timer);
     }
@@ -144,6 +171,14 @@ export default function PagamentoRetornoScreen() {
   const erro = statusTela === "erro";
   const carregando = statusTela === "carregando" || statusTela === "pendente";
 
+  async function abrirAplicativo() {
+    try {
+      await Linking.openURL(deepLinkApp);
+    } catch (error) {
+      console.log("Erro ao abrir app:", error);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
@@ -195,6 +230,28 @@ export default function PagamentoRetornoScreen() {
           )}
 
           {carregando && <ActivityIndicator color="#006B2E" size="large" />}
+
+          {Platform.OS === "web" && (
+            <View style={styles.appBox}>
+              <Text style={styles.appBoxTitle}>Tem o APK instalado?</Text>
+
+              <Text style={styles.appBoxText}>
+                Vamos tentar abrir o aplicativo automaticamente. Se aparecer uma
+                mensagem do navegador, toque em abrir.
+              </Text>
+
+              <TouchableOpacity style={styles.openAppButton} onPress={abrirAplicativo}>
+                <Text style={styles.openAppButtonText}>Abrir no aplicativo</Text>
+              </TouchableOpacity>
+
+              {tentouAbrirApp && (
+                <Text style={styles.appHelpText}>
+                  Se o app não abrir, continue por aqui mesmo. Seu saldo também
+                  será atualizado pelo PWA.
+                </Text>
+              )}
+            </View>
+          )}
 
           <TouchableOpacity
             style={styles.primaryButton}
@@ -332,6 +389,55 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 16,
     textAlign: "center",
+  },
+
+  appBox: {
+    width: "100%",
+    backgroundColor: "#F3F6F4",
+    borderRadius: 18,
+    padding: 15,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+
+  appBoxTitle: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  appBoxText: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 18,
+    marginTop: 6,
+  },
+
+  openAppButton: {
+    backgroundColor: "#006B2E",
+    borderRadius: 15,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 12,
+  },
+
+  openAppButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  appHelpText: {
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 16,
+    marginTop: 9,
   },
 
   primaryButton: {
