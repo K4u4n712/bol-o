@@ -269,7 +269,7 @@ export default function BolaoScreen() {
             emailLower: data.emailLower || "",
             placar: data.placar || "",
             jogo: data.jogo || "",
-            jogoId: data.jogoId || "",
+            jogoId: String(data.jogoId || ""),
             valor: Number(data.valor || VALOR_APOSTA),
             criadoEm: data.criadoEm,
             atualizadoEm: data.atualizadoEm,
@@ -299,9 +299,28 @@ export default function BolaoScreen() {
 
     return jogos
       .map((jogo) => {
-        const apostasDoJogo = apostas.filter(
-          (aposta) => aposta.jogoId === jogo.id
-        );
+        const jogoIdAtual = String(jogo.id || "");
+        const nomeJogoCompleto = `${jogo.timeCasa.nome} x ${jogo.timeFora.nome}`;
+        const nomeJogoSiglas = `${jogo.timeCasa.sigla} x ${jogo.timeFora.sigla}`;
+
+        const apostasDoJogo = apostas.filter((aposta) => {
+          const apostaJogoId = String(aposta.jogoId || "");
+
+          if (apostaJogoId && apostaJogoId === jogoIdAtual) {
+            return true;
+          }
+
+          const textoJogoAposta = normalizarTexto(aposta.jogo || "");
+
+          if (!textoJogoAposta) {
+            return false;
+          }
+
+          return (
+            textoJogoAposta === normalizarTexto(nomeJogoCompleto) ||
+            textoJogoAposta === normalizarTexto(nomeJogoSiglas)
+          );
+        });
 
         const minhaAposta =
           apostasDoJogo.find((aposta) => {
@@ -343,18 +362,22 @@ export default function BolaoScreen() {
       .filter((jogo) => {
         return (
           !jogo.isFinished &&
-          (jogo.hasMyGuess || jogo.isLive || jogo.apostasAbertas)
+          (
+            jogo.totalParticipantes > 0 ||
+            jogo.hasMyGuess ||
+            jogo.isLive ||
+            jogo.apostasAbertas
+          )
         );
       })
       .sort((a, b) => {
         if (a.isFocusedGame && !b.isFocusedGame) return -1;
         if (!a.isFocusedGame && b.isFocusedGame) return 1;
 
-        if (a.hasMyGuess && !b.hasMyGuess) return -1;
-        if (!a.hasMyGuess && b.hasMyGuess) return 1;
+        if (b.totalBolao !== a.totalBolao) return b.totalBolao - a.totalBolao;
 
-        if (a.hasMyGuess && b.hasMyGuess) {
-          return b.myGuessMillis - a.myGuessMillis;
+        if (b.totalParticipantes !== a.totalParticipantes) {
+          return b.totalParticipantes - a.totalParticipantes;
         }
 
         if (a.isLive && !b.isLive) return -1;
@@ -363,9 +386,11 @@ export default function BolaoScreen() {
         if (a.apostasAbertas && !b.apostasAbertas) return -1;
         if (!a.apostasAbertas && b.apostasAbertas) return 1;
 
-        if (b.totalBolao !== a.totalBolao) return b.totalBolao - a.totalBolao;
-        if (b.totalParticipantes !== a.totalParticipantes) {
-          return b.totalParticipantes - a.totalParticipantes;
+        if (a.hasMyGuess && !b.hasMyGuess) return -1;
+        if (!a.hasMyGuess && b.hasMyGuess) return 1;
+
+        if (a.hasMyGuess && b.hasMyGuess) {
+          return b.myGuessMillis - a.myGuessMillis;
         }
 
         return a.startMillis - b.startMillis;
@@ -401,6 +426,15 @@ export default function BolaoScreen() {
     null;
 
   const apostasSelecionadas = jogoSelecionado?.apostas || [];
+
+  function normalizarTexto(texto: string) {
+    return String(texto || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   function pegarMillis(data?: any) {
     if (!data) return 0;
