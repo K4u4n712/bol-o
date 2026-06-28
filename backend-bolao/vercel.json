@@ -1,5 +1,6 @@
 {
   "framework": null,
   "installCommand": "npm install",
-  "buildCommand": "echo \"Backend sem build\""
+  "buildCommand": "echo \"Backend sem build\"",
+  "outputDirectory": "public"
 }
