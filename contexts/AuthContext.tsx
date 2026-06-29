@@ -36,6 +36,9 @@ type User = {
   role: "user" | "admin";
   banido?: boolean;
   uid?: string;
+  online?: boolean;
+  ultimaAtividadeEm?: any;
+  ultimoAcesso?: any;
 };
 
 type LoggedUser = {
@@ -45,6 +48,9 @@ type LoggedUser = {
   role: "user" | "admin";
   banido?: boolean;
   uid?: string;
+  online?: boolean;
+  ultimaAtividadeEm?: any;
+  ultimoAcesso?: any;
 };
 
 type AuthContextData = {
@@ -82,6 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saldo: Number(data.saldo || 0),
       role: isMasterAdmin ? "admin" : (data.role || "user"),
       banido: data.banido || false,
+      online: Boolean(data.online || false),
+      ultimaAtividadeEm: data.ultimaAtividadeEm || null,
+      ultimoAcesso: data.ultimoAcesso || null,
     };
   }
 
@@ -114,8 +123,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saldo: 0,
       role,
       banido: false,
+      online: true,
+      ultimaAtividadeEm: serverTimestamp(),
+      ultimoAcesso: serverTimestamp(),
       criadoEm: serverTimestamp(),
     });
+  }
+
+  async function atualizarPresencaUsuario(uid: string, ativo: boolean) {
+    try {
+      const dadosPresenca: any = {
+        uid,
+        online: ativo,
+        ultimaAtividadeEm: serverTimestamp(),
+        ultimoAcesso: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      };
+
+      if (user?.nome) dadosPresenca.nome = user.nome;
+      if (user?.email) {
+        dadosPresenca.email = user.email;
+        dadosPresenca.emailLower = user.email.toLowerCase();
+      }
+      if (user?.role) dadosPresenca.role = user.role;
+
+      await setDoc(doc(db, "users", uid), dadosPresenca, { merge: true });
+
+      const usuarioRef = doc(db, "usuarios", uid);
+      const usuarioSnapshot = await getDoc(usuarioRef);
+
+      if (usuarioSnapshot.exists()) {
+        await setDoc(usuarioRef, dadosPresenca, { merge: true });
+      }
+    } catch (error) {
+      console.log("Erro ao atualizar presença do usuário:", error);
+    }
   }
 
   async function carregarPerfilUsuario(uid: string) {
@@ -143,6 +185,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 👇 MÁGICA AQUI: Força a carteirada de admin para o seu e-mail
       role: isMasterAdmin ? "admin" : (data.role || "user"),
       banido: data.banido || false,
+      online: Boolean(data.online || false),
+      ultimaAtividadeEm: data.ultimaAtividadeEm || null,
+      ultimoAcesso: data.ultimoAcesso || null,
     };
 
     setUser(usuarioLogado);
@@ -162,6 +207,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUsers(lista);
   }
+
+  useEffect(() => {
+    const unsubscribeUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const lista = snapshot.docs.map((documento) =>
+          formatarUsuario(documento.id, documento.data())
+        );
+
+        lista.sort((a, b) => {
+          if (a.role === "admin") return -1;
+          if (b.role === "admin") return 1;
+          return a.nome.localeCompare(b.nome);
+        });
+
+        setUsers(lista);
+      },
+      (error) => {
+        console.log("Erro ao escutar usuários em tempo real:", error);
+      }
+    );
+
+    return () => unsubscribeUsers();
+  }, []);
 
   useEffect(() => {
     let unsubscribeUsuario: (() => void) | undefined;
@@ -209,6 +278,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // 👇 MÁGICA AQUI TAMBÉM: Garante a role de admin no tempo real
               role: isMasterAdmin ? "admin" : (data.role || "user"),
               banido: data.banido || false,
+              online: Boolean(data.online || false),
+              ultimaAtividadeEm: data.ultimaAtividadeEm || null,
+              ultimoAcesso: data.ultimoAcesso || null,
             };
 
             setUser(usuarioAtualizado);
@@ -233,6 +305,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const uidAtual = user.uid;
+
+    atualizarPresencaUsuario(uidAtual, true);
+
+    const interval = setInterval(() => {
+      atualizarPresencaUsuario(uidAtual, true);
+    }, 60000);
+
+    const marcarOffline = () => {
+      atualizarPresencaUsuario(uidAtual, false);
+    };
+
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("beforeunload", marcarOffline);
+    }
+
+    return () => {
+      clearInterval(interval);
+
+      if (typeof window !== "undefined" && window.removeEventListener) {
+        window.removeEventListener("beforeunload", marcarOffline);
+      }
+
+      atualizarPresencaUsuario(uidAtual, false);
+    };
+  }, [user?.uid]);
 
   async function login(email: string, senha: string) {
     if (!email || !senha) {
@@ -376,6 +478,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    if (user?.uid) {
+      await atualizarPresencaUsuario(user.uid, false);
+    }
+
     await signOut(auth);
     setUser(null);
   }

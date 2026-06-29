@@ -29,6 +29,7 @@ import {
 
 const VALOR_APOSTA = 10;
 const TAXA_ADMIN = 0.2;
+const LIMITE_ONLINE_MS = 2 * 60 * 1000;
 
 type JogoMonitorado = {
   id: string;
@@ -589,6 +590,73 @@ export default function AdminScreen() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function pegarMillisPresenca(item: any) {
+    return pegarMillis(
+      item.ultimaAtividadeEm ||
+        item.ultimoAcesso ||
+        item.lastSeenAt ||
+        item.atualizadoEm ||
+        item.criadoEm
+    );
+  }
+
+  function usuarioEstaOnline(item: any) {
+    if (item.banido) return false;
+
+    const ultimaAtividade = pegarMillisPresenca(item);
+
+    if (!ultimaAtividade) {
+      return Boolean(item.online);
+    }
+
+    return Boolean(item.online) && agoraTick - ultimaAtividade <= LIMITE_ONLINE_MS;
+  }
+
+  function textoTempoRelativo(millis: number) {
+    if (!millis) return "Nunca acessou";
+
+    const diferenca = Math.max(0, agoraTick - millis);
+    const minutos = Math.floor(diferenca / 60000);
+
+    if (minutos < 1) return "agora";
+    if (minutos === 1) return "há 1 minuto";
+    if (minutos < 60) return `há ${minutos} minutos`;
+
+    const horas = Math.floor(minutos / 60);
+
+    if (horas === 1) return "há 1 hora";
+    if (horas < 24) return `há ${horas} horas`;
+
+    const dias = Math.floor(horas / 24);
+
+    if (dias === 1) return "há 1 dia";
+    if (dias <= 7) return `há ${dias} dias`;
+
+    return `em ${new Date(millis).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  }
+
+  function textoPresencaUsuario(item: any) {
+    if (item.banido) return "Usuário banido";
+
+    const ultimaAtividade = pegarMillisPresenca(item);
+
+    if (usuarioEstaOnline(item)) {
+      return "Online agora";
+    }
+
+    if (!ultimaAtividade) {
+      return "Ainda não acessou após a atualização do sistema";
+    }
+
+    return `Último acesso ${textoTempoRelativo(ultimaAtividade)}`;
   }
 
   function textoStatusSaque(status: string) {
@@ -2031,91 +2099,111 @@ export default function AdminScreen() {
               </View>
             )}
 
-            {usuariosComuns.map((item: any) => (
-              <View
-                style={[styles.userCard, item.banido && styles.userCardBanned]}
-                key={item.email}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {String(item.nome || "U").charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+            {usuariosComuns.map((item: any) => {
+              const onlineAgora = usuarioEstaOnline(item);
+              const textoPresenca = textoPresencaUsuario(item);
 
-                <View style={styles.userInfo}>
-                  <View style={styles.userTopRow}>
-                    <Text style={styles.userName}>{item.nome}</Text>
+              return (
+                <View
+                  style={[styles.userCard, item.banido && styles.userCardBanned]}
+                  key={item.email}
+                >
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {String(item.nome || "U").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
 
-                    <View
+                  <View style={styles.userInfo}>
+                    <View style={styles.userTopRow}>
+                      <Text style={styles.userName}>{item.nome}</Text>
+
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          item.banido
+                            ? styles.statusBanned
+                            : onlineAgora
+                            ? styles.statusOnline
+                            : styles.statusOffline,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            item.banido
+                              ? styles.statusTextBanned
+                              : onlineAgora
+                              ? styles.statusTextOnline
+                              : styles.statusTextOffline,
+                          ]}
+                        >
+                          {item.banido ? "BANIDO" : onlineAgora ? "ONLINE" : "OFFLINE"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.userEmail}>{item.email}</Text>
+
+                    <Text
                       style={[
-                        styles.statusBadge,
-                        item.banido ? styles.statusBanned : styles.statusActive,
+                        styles.presenceText,
+                        onlineAgora && styles.presenceTextOnline,
                       ]}
+                    >
+                      {textoPresenca}
+                    </Text>
+
+                    <View style={styles.balanceBadge}>
+                      <Text style={styles.balanceBadgeText}>
+                        Saldo: {formatarMoeda(pegarSaldoVisual(item))}
+                      </Text>
+                    </View>
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Novo saldo"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={saldosEditados[item.email] || ""}
+                      onChangeText={(valor) =>
+                        alterarSaldoCampo(item.email, valor)
+                      }
+                    />
+
+                    <TouchableOpacity
+                      style={styles.saveButton}
+                      onPress={() => salvarSaldo(item.email)}
+                    >
+                      <Text style={styles.saveButtonText}>Salvar saldo</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.banButton,
+                        item.banido && styles.unbanButton,
+                      ]}
+                      onPress={() =>
+                        alternarBanimento(
+                          item.email,
+                          item.nome,
+                          Boolean(item.banido)
+                        )
+                      }
                     >
                       <Text
                         style={[
-                          styles.statusText,
-                          item.banido
-                            ? styles.statusTextBanned
-                            : styles.statusTextActive,
+                          styles.banButtonText,
+                          item.banido && styles.unbanButtonText,
                         ]}
                       >
-                        {item.banido ? "BANIDO" : "ATIVO"}
+                        {item.banido ? "Liberar usuário" : "Banir usuário"}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   </View>
-
-                  <Text style={styles.userEmail}>{item.email}</Text>
-
-                  <View style={styles.balanceBadge}>
-                    <Text style={styles.balanceBadgeText}>
-                      Saldo: {formatarMoeda(pegarSaldoVisual(item))}
-                    </Text>
-                  </View>
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Novo saldo"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    value={saldosEditados[item.email] || ""}
-                    onChangeText={(valor) =>
-                      alterarSaldoCampo(item.email, valor)
-                    }
-                  />
-
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={() => salvarSaldo(item.email)}
-                  >
-                    <Text style={styles.saveButtonText}>Salvar saldo</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.banButton,
-                      item.banido && styles.unbanButton,
-                    ]}
-                    onPress={() =>
-                      alternarBanimento(
-                        item.email,
-                        item.nome,
-                        Boolean(item.banido)
-                      )
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.banButtonText,
-                        item.banido && styles.unbanButtonText,
-                      ]}
-                    >
-                      {item.banido ? "Liberar usuário" : "Banir usuário"}
-                    </Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -2657,10 +2745,25 @@ const styles = StyleSheet.create({
   },
 
   statusActive: { backgroundColor: "#DCFCE7" },
+  statusOnline: { backgroundColor: "#DCFCE7" },
+  statusOffline: { backgroundColor: "#E5E7EB" },
   statusBanned: { backgroundColor: "#FEE2E2" },
   statusText: { fontSize: 10, fontWeight: "900" },
   statusTextActive: { color: "#166534" },
+  statusTextOnline: { color: "#166534" },
+  statusTextOffline: { color: "#374151" },
   statusTextBanned: { color: "#991B1B" },
+
+  presenceText: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+
+  presenceTextOnline: {
+    color: "#16A34A",
+  },
 
   balanceBadge: {
     backgroundColor: "#E7FBEF",
