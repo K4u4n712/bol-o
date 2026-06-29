@@ -89,6 +89,26 @@ type ResultadoProcessado = {
   processadoEmTexto: string;
 };
 
+type SaqueSolicitado = {
+  id: string;
+  uid: string;
+  nome: string;
+  email: string;
+  emailLower: string;
+  chavePix: string;
+  valorSolicitado: number;
+  saldoAntes: number;
+  saldoDepois: number;
+  status: "processando" | "pago" | "cancelado" | string;
+  prazoEstimadoMinutos?: number;
+  criadoEm?: any;
+  atualizadoEm?: any;
+  pagoEm?: any;
+  canceladoEm?: any;
+  pagoPor?: string;
+  canceladoPor?: string;
+};
+
 export default function AdminScreen() {
   const {
     user,
@@ -131,8 +151,14 @@ export default function AdminScreen() {
     {}
   );
 
+  const [saques, setSaques] = useState<SaqueSolicitado[]>([]);
+  const [processandoSaques, setProcessandoSaques] = useState<Record<string, boolean>>(
+    {}
+  );
+
   const [secoesAbertas, setSecoesAbertas] = useState({
     jogos: true,
+    saques: true,
     usuarios: false,
   });
 
@@ -156,6 +182,14 @@ export default function AdminScreen() {
     },
     0
   );
+
+  const saquesProcessando = saques.filter(
+    (saque) => saque.status === "processando"
+  );
+
+  const totalSaquesProcessando = saquesProcessando.reduce((total, saque) => {
+    return total + Number(saque.valorSolicitado || 0);
+  }, 0);
 
   useEffect(() => {
     carregarUsuarios();
@@ -211,6 +245,60 @@ export default function AdminScreen() {
       unsubscribeUsers();
       unsubscribeUsuarios();
     };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "saques"),
+      (snapshot) => {
+        const lista: SaqueSolicitado[] = snapshot.docs.map((documento) => {
+          const data = documento.data() || {};
+
+          return {
+            id: documento.id,
+            uid: data.uid || "",
+            nome: data.nome || "Usuário",
+            email: data.email || "",
+            emailLower: data.emailLower || normalizarEmail(data.email || ""),
+            chavePix: data.chavePix || "",
+            valorSolicitado: Number(data.valorSolicitado || 0),
+            saldoAntes: Number(data.saldoAntes || 0),
+            saldoDepois: Number(data.saldoDepois || 0),
+            status: data.status || "processando",
+            prazoEstimadoMinutos: Number(data.prazoEstimadoMinutos || 60),
+            criadoEm: data.criadoEm,
+            atualizadoEm: data.atualizadoEm,
+            pagoEm: data.pagoEm,
+            canceladoEm: data.canceladoEm,
+            pagoPor: data.pagoPor || "",
+            canceladoPor: data.canceladoPor || "",
+          };
+        });
+
+        lista.sort((a, b) => {
+          const prioridade = (status: string) => {
+            if (status === "processando") return 0;
+            if (status === "pago") return 1;
+            if (status === "cancelado") return 2;
+            return 3;
+          };
+
+          const pa = prioridade(a.status);
+          const pb = prioridade(b.status);
+
+          if (pa !== pb) return pa - pb;
+
+          return pegarMillis(b.atualizadoEm || b.criadoEm) - pegarMillis(a.atualizadoEm || a.criadoEm);
+        });
+
+        setSaques(lista);
+      },
+      (error) => {
+        console.log("Erro ao carregar saques:", error);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -464,7 +552,7 @@ export default function AdminScreen() {
     );
   }
 
-  function alternarSecao(secao: "jogos" | "usuarios") {
+  function alternarSecao(secao: "jogos" | "saques" | "usuarios") {
     setSecoesAbertas((prev) => ({
       ...prev,
       [secao]: !prev[secao],
@@ -487,6 +575,26 @@ export default function AdminScreen() {
 
   function formatarMoeda(valor: number) {
     return `${Number(valor || 0).toFixed(2)} BRL`;
+  }
+
+  function formatarDataHora(data?: any) {
+    const millis = pegarMillis(data);
+
+    if (!millis) return "Sem data";
+
+    return new Date(millis).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function textoStatusSaque(status: string) {
+    if (status === "pago") return "PAGO";
+    if (status === "cancelado") return "CANCELADO";
+    return "PROCESSANDO";
   }
 
   function normalizarEmail(email: string) {
@@ -744,6 +852,154 @@ export default function AdminScreen() {
         usuarioUsuarios?.ref || (id ? doc(db, "usuarios", id) : null),
       data: dadosCombinados as any,
     };
+  }
+
+  function marcarSaqueProcessando(saqueId: string, valor: boolean) {
+    setProcessandoSaques((prev) => ({
+      ...prev,
+      [saqueId]: valor,
+    }));
+  }
+
+  async function marcarSaquePago(saque: SaqueSolicitado) {
+    try {
+      if (saque.status !== "processando") {
+        mostrarAlerta("Saque já atualizado", "Esse saque não está mais em processamento.");
+        return;
+      }
+
+      marcarSaqueProcessando(saque.id, true);
+
+      await updateDoc(doc(db, "saques", saque.id), {
+        status: "pago",
+        pagoPor: user?.email || "admin",
+        pagoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      });
+
+      mostrarAlerta(
+        "Saque marcado como pago",
+        `${saque.nome} • ${formatarMoeda(saque.valorSolicitado)}`
+      );
+    } catch (error) {
+      console.log("Erro ao marcar saque como pago:", error);
+      mostrarAlerta("Erro", "Não foi possível marcar o saque como pago.");
+    } finally {
+      marcarSaqueProcessando(saque.id, false);
+    }
+  }
+
+  function confirmarMarcarSaquePago(saque: SaqueSolicitado) {
+    mostrarConfirmacao(
+      "Confirmar pagamento",
+      `Confirma que você já pagou ${formatarMoeda(saque.valorSolicitado)} para ${saque.nome} na chave Pix: ${saque.chavePix}?`,
+      () => marcarSaquePago(saque)
+    );
+  }
+
+  async function cancelarSaque(saque: SaqueSolicitado) {
+    try {
+      if (saque.status !== "processando") {
+        mostrarAlerta("Saque já atualizado", "Esse saque não está mais em processamento.");
+        return;
+      }
+
+      marcarSaqueProcessando(saque.id, true);
+
+      const usuarioUsers = await buscarDocumentoPorEmailEmColecao("users", saque.email);
+      const usuarioUsuarios = await buscarDocumentoPorEmailEmColecao(
+        "usuarios",
+        saque.email
+      );
+
+      const saldoUsers = Number(usuarioUsers?.data?.saldo || 0);
+      const saldoUsuarios = Number(usuarioUsuarios?.data?.saldo || 0);
+      const saldoAtualUsuario = Math.max(saldoUsers, saldoUsuarios, saque.saldoDepois || 0);
+      const saldoDepoisCancelamento = Number(
+        (saldoAtualUsuario + Number(saque.valorSolicitado || 0)).toFixed(2)
+      );
+
+      const uidBase = saque.uid || usuarioUsers?.id || usuarioUsuarios?.id || "";
+      const emailLower = normalizarEmail(saque.email);
+
+      const dadosUsuario = {
+        uid: uidBase,
+        nome: saque.nome || "Usuário",
+        email: saque.email,
+        emailLower,
+        saldo: saldoDepoisCancelamento,
+        atualizadoEm: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+
+      if (usuarioUsers) {
+        batch.set(usuarioUsers.ref, dadosUsuario, { merge: true });
+      } else if (uidBase) {
+        batch.set(doc(db, "users", uidBase), dadosUsuario, { merge: true });
+      }
+
+      if (usuarioUsuarios) {
+        batch.set(usuarioUsuarios.ref, dadosUsuario, { merge: true });
+      } else if (uidBase) {
+        batch.set(doc(db, "usuarios", uidBase), dadosUsuario, { merge: true });
+      }
+
+      batch.set(
+        doc(db, "saques", saque.id),
+        {
+          status: "cancelado",
+          canceladoPor: user?.email || "admin",
+          canceladoEm: serverTimestamp(),
+          saldoDepoisCancelamento,
+          valorDevolvido: Number(saque.valorSolicitado || 0),
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      if (uidBase) {
+        const extratoId = `saque_cancelado_${saque.id}`;
+        const extrato = {
+          tipo: "saque_cancelado",
+          descricao: "Saque cancelado e saldo devolvido",
+          saqueId: saque.id,
+          valor: Number(saque.valorSolicitado || 0),
+          saldoAntes: saldoAtualUsuario,
+          saldoDepois: saldoDepoisCancelamento,
+          status: "cancelado",
+          criadoEm: serverTimestamp(),
+        };
+
+        batch.set(doc(db, "users", uidBase, "extrato", extratoId), extrato, {
+          merge: true,
+        });
+        batch.set(doc(db, "usuarios", uidBase, "extrato", extratoId), extrato, {
+          merge: true,
+        });
+      }
+
+      await batch.commit();
+      await carregarUsuarios();
+
+      mostrarAlerta(
+        "Saque cancelado",
+        `O valor de ${formatarMoeda(saque.valorSolicitado)} foi devolvido ao saldo do usuário.`
+      );
+    } catch (error) {
+      console.log("Erro ao cancelar saque:", error);
+      mostrarAlerta("Erro", "Não foi possível cancelar o saque.");
+    } finally {
+      marcarSaqueProcessando(saque.id, false);
+    }
+  }
+
+  function confirmarCancelarSaque(saque: SaqueSolicitado) {
+    mostrarConfirmacao(
+      "Cancelar saque",
+      `Deseja cancelar o saque de ${formatarMoeda(saque.valorSolicitado)} de ${saque.nome} e devolver o saldo para a conta?`,
+      () => cancelarSaque(saque)
+    );
   }
 
   function verificarVencedor(
@@ -1330,7 +1586,7 @@ export default function AdminScreen() {
   }
 
   function renderCabecalhoSecao(
-    secao: "jogos" | "usuarios",
+    secao: "jogos" | "saques" | "usuarios",
     icone: string,
     titulo: string,
     subtitulo: string
@@ -1411,6 +1667,22 @@ export default function AdminScreen() {
               {totalArrecadadoGeral.toFixed(0)}
             </Text>
             <Text style={styles.statLabel}>BRL total</Text>
+          </View>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>💸</Text>
+            <Text style={styles.statNumber}>{saquesProcessando.length}</Text>
+            <Text style={styles.statLabel}>saques pendentes</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statIcon}>⏳</Text>
+            <Text style={styles.statNumber}>
+              {totalSaquesProcessando.toFixed(0)}
+            </Text>
+            <Text style={styles.statLabel}>BRL em saque</Text>
           </View>
         </View>
 
@@ -1607,6 +1879,135 @@ export default function AdminScreen() {
                       </TouchableOpacity>
                     </View>
                   ))}
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {renderCabecalhoSecao(
+          "saques",
+          "💸",
+          "Saques solicitados",
+          `${saquesProcessando.length} pendente(s) • ${formatarMoeda(totalSaquesProcessando)}`
+        )}
+
+        {secoesAbertas.saques && (
+          <View style={styles.sectionContent}>
+            {saques.length === 0 && (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>
+                  Nenhum saque solicitado ainda.
+                </Text>
+              </View>
+            )}
+
+            {saques.map((saque) => {
+              const processandoSaque = Boolean(processandoSaques[saque.id]);
+
+              return (
+                <View
+                  style={[
+                    styles.withdrawAdminCard,
+                    saque.status === "pago" && styles.withdrawAdminCardPaid,
+                    saque.status === "cancelado" && styles.withdrawAdminCardCanceled,
+                  ]}
+                  key={saque.id}
+                >
+                  <View style={styles.withdrawHeaderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.withdrawName}>{saque.nome}</Text>
+                      <Text style={styles.withdrawEmail}>{saque.email}</Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.withdrawStatusBadge,
+                        saque.status === "pago" && styles.withdrawStatusPaid,
+                        saque.status === "cancelado" && styles.withdrawStatusCanceled,
+                      ]}
+                    >
+                      <Text style={styles.withdrawStatusText}>
+                        {textoStatusSaque(saque.status)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.withdrawValueBox}>
+                    <Text style={styles.withdrawValueLabel}>Valor solicitado</Text>
+                    <Text style={styles.withdrawValueText}>
+                      {formatarMoeda(saque.valorSolicitado)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>Chave Pix: </Text>
+                    {saque.chavePix}
+                  </Text>
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>UID: </Text>
+                    {saque.uid || "não informado"}
+                  </Text>
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>Solicitado em: </Text>
+                    {formatarDataHora(saque.criadoEm)}
+                  </Text>
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>Prazo estimado: </Text>
+                    até {saque.prazoEstimadoMinutos || 60} minutos
+                  </Text>
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>Saldo antigo: </Text>
+                    {formatarMoeda(saque.saldoAntes)}
+                  </Text>
+                  <Text style={styles.withdrawInfo}>
+                    <Text style={styles.withdrawInfoLabel}>Saldo atual após retenção: </Text>
+                    {formatarMoeda(saque.saldoDepois)}
+                  </Text>
+
+                  {saque.status === "pago" && (
+                    <Text style={styles.withdrawInfo}>
+                      <Text style={styles.withdrawInfoLabel}>Pago por: </Text>
+                      {saque.pagoPor || "admin"} • {formatarDataHora(saque.pagoEm)}
+                    </Text>
+                  )}
+
+                  {saque.status === "cancelado" && (
+                    <Text style={styles.withdrawInfo}>
+                      <Text style={styles.withdrawInfoLabel}>Cancelado por: </Text>
+                      {saque.canceladoPor || "admin"} • {formatarDataHora(saque.canceladoEm)}
+                    </Text>
+                  )}
+
+                  {saque.status === "processando" && (
+                    <View style={styles.withdrawActionsRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.withdrawPayButton,
+                          processandoSaque && styles.disabledButton,
+                        ]}
+                        disabled={processandoSaque}
+                        onPress={() => confirmarMarcarSaquePago(saque)}
+                      >
+                        <Text style={styles.withdrawPayText}>
+                          {processandoSaque ? "Processando..." : "Marcar como pago"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.withdrawCancelButton,
+                          processandoSaque && styles.disabledButton,
+                        ]}
+                        disabled={processandoSaque}
+                        onPress={() => confirmarCancelarSaque(saque)}
+                      >
+                        <Text style={styles.withdrawCancelText}>
+                          Cancelar e devolver
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })}
@@ -2312,6 +2713,137 @@ const styles = StyleSheet.create({
   },
 
   unbanButtonText: { color: "#166534" },
+
+  withdrawAdminCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 14,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#FFD500",
+  },
+
+  withdrawAdminCardPaid: {
+    borderColor: "#86EFAC",
+    backgroundColor: "#F0FDF4",
+  },
+
+  withdrawAdminCardCanceled: {
+    borderColor: "#FCA5A5",
+    backgroundColor: "#FEF2F2",
+  },
+
+  withdrawHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  withdrawName: {
+    color: "#111827",
+    fontSize: 19,
+    fontWeight: "900",
+  },
+
+  withdrawEmail: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+
+  withdrawStatusBadge: {
+    backgroundColor: "#FFF6BF",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+
+  withdrawStatusPaid: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  withdrawStatusCanceled: {
+    backgroundColor: "#FEE2E2",
+  },
+
+  withdrawStatusText: {
+    color: "#111827",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  withdrawValueBox: {
+    backgroundColor: "#111827",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 14,
+    marginBottom: 12,
+  },
+
+  withdrawValueLabel: {
+    color: "#D1D5DB",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  withdrawValueText: {
+    color: "#FFD500",
+    fontSize: 28,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+
+  withdrawInfo: {
+    color: "#374151",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 5,
+    lineHeight: 19,
+  },
+
+  withdrawInfoLabel: {
+    color: "#111827",
+    fontWeight: "900",
+  },
+
+  withdrawActionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
+
+  withdrawPayButton: {
+    flex: 1,
+    backgroundColor: "#16A34A",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+
+  withdrawPayText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  withdrawCancelButton: {
+    flex: 1,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+  },
+
+  withdrawCancelText: {
+    color: "#DC2626",
+    fontSize: 13,
+    fontWeight: "900",
+  },
 
   emptyCard: {
     backgroundColor: "#FFFFFF",

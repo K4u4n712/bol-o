@@ -22,6 +22,8 @@ import {
   onSnapshot,
   query,
   where,
+  runTransaction,
+  serverTimestamp,
 } from "firebase/firestore";
 
 const CREATE_CHECKOUT_URL =
@@ -35,6 +37,20 @@ type PerfilStats = {
   melhorPosicao: string;
 };
 
+type SaqueUsuario = {
+  id: string;
+  uid: string;
+  nome: string;
+  email: string;
+  chavePix: string;
+  valorSolicitado: number;
+  saldoAntes: number;
+  saldoDepois: number;
+  status: "processando" | "pago" | "cancelado" | string;
+  criadoEm?: any;
+  atualizadoEm?: any;
+};
+
 export default function PerfilScreen() {
   const { user, logout } = useAuth();
 
@@ -42,6 +58,12 @@ export default function PerfilScreen() {
   const [valorDeposito, setValorDeposito] = useState("10");
   const [depositando, setDepositando] = useState(false);
   const [saldoAtual, setSaldoAtual] = useState(0);
+
+  const [modalSaque, setModalSaque] = useState(false);
+  const [valorSaque, setValorSaque] = useState("20");
+  const [chavePix, setChavePix] = useState("");
+  const [solicitandoSaque, setSolicitandoSaque] = useState(false);
+  const [saquesUsuario, setSaquesUsuario] = useState<SaqueUsuario[]>([]);
 
   const [stats, setStats] = useState<PerfilStats>({
     totalPalpites: 0,
@@ -70,6 +92,51 @@ export default function PerfilScreen() {
       (error) => {
         console.log("Erro ao buscar saldo:", error);
         setSaldoAtual(Number(user?.saldo || 0));
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const qSaques = query(
+      collection(db, "saques"),
+      where("uid", "==", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(
+      qSaques,
+      (snapshot) => {
+        const lista: SaqueUsuario[] = snapshot.docs.map((documento) => {
+          const data = documento.data();
+
+          return {
+            id: documento.id,
+            uid: data.uid || "",
+            nome: data.nome || "Usuário",
+            email: data.email || "",
+            chavePix: data.chavePix || "",
+            valorSolicitado: Number(data.valorSolicitado || 0),
+            saldoAntes: Number(data.saldoAntes || 0),
+            saldoDepois: Number(data.saldoDepois || 0),
+            status: data.status || "processando",
+            criadoEm: data.criadoEm,
+            atualizadoEm: data.atualizadoEm,
+          };
+        });
+
+        lista.sort((a, b) => {
+          const dataA = pegarMillis(a.atualizadoEm || a.criadoEm);
+          const dataB = pegarMillis(b.atualizadoEm || b.criadoEm);
+          return dataB - dataA;
+        });
+
+        setSaquesUsuario(lista);
+      },
+      (error) => {
+        console.log("Erro ao buscar saques do usuário:", error);
       }
     );
 
@@ -204,6 +271,149 @@ export default function PerfilScreen() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  }
+
+  function saquesEmProcessamento() {
+    return saquesUsuario.filter((saque) => saque.status === "processando");
+  }
+
+  function textoStatusSaque(status: string) {
+    if (status === "pago") return "Pago";
+    if (status === "cancelado") return "Cancelado";
+    return "Em processamento";
+  }
+
+  async function solicitarSaque() {
+    try {
+      const valorLimpo = valorSaque.replace(",", ".").trim();
+      const valor = Number(valorLimpo);
+      const chave = chavePix.trim();
+
+      if (!user?.uid || !user?.email) {
+        mostrarAlerta("Erro", "Você precisa estar logado para solicitar saque.");
+        return;
+      }
+
+      const uidUsuario = String(user.uid);
+      const emailUsuario = String(user.email);
+      const nomeUsuarioConta = user.nome || "Usuário";
+
+      if (!valor || isNaN(valor)) {
+        mostrarAlerta("Valor inválido", "Digite um valor válido para sacar.");
+        return;
+      }
+
+      if (valor < 20) {
+        mostrarAlerta("Saque mínimo", "O valor mínimo para saque é R$ 20,00.");
+        return;
+      }
+
+      if (valor > saldoAtual) {
+        mostrarAlerta(
+          "Saldo insuficiente",
+          `Você tem ${formatarSaldo(saldoAtual)} BRL disponível para saque.`
+        );
+        return;
+      }
+
+      if (!chave) {
+        mostrarAlerta("Chave Pix obrigatória", "Digite a chave Pix para receber o saque.");
+        return;
+      }
+
+      if (solicitandoSaque) return;
+
+      setSolicitandoSaque(true);
+
+      const saqueRef = doc(collection(db, "saques"));
+      const userRef = doc(db, "users", uidUsuario);
+      const usuarioRef = doc(db, "usuarios", uidUsuario);
+      const extratoId = `saque_${saqueRef.id}`;
+
+      await runTransaction(db, async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        const usuarioSnap = await transaction.get(usuarioRef);
+
+        const saldoUsers = userSnap.exists() ? Number(userSnap.data().saldo || 0) : 0;
+        const saldoUsuarios = usuarioSnap.exists()
+          ? Number(usuarioSnap.data().saldo || 0)
+          : 0;
+
+        const saldoBase = Math.max(saldoUsers, saldoUsuarios, saldoAtual);
+
+        if (saldoBase < valor) {
+          throw new Error("Saldo insuficiente para solicitar este saque.");
+        }
+
+        const saldoDepois = Number((saldoBase - valor).toFixed(2));
+        const emailLower = emailUsuario.toLowerCase();
+        const nomeUsuario = nomeUsuarioConta;
+
+        const dadosUsuario = {
+          uid: uidUsuario,
+          nome: nomeUsuario,
+          email: emailUsuario,
+          emailLower,
+          saldo: saldoDepois,
+          atualizadoEm: serverTimestamp(),
+        };
+
+        transaction.set(userRef, dadosUsuario, { merge: true });
+        transaction.set(usuarioRef, dadosUsuario, { merge: true });
+
+        transaction.set(saqueRef, {
+          uid: uidUsuario,
+          nome: nomeUsuario,
+          email: emailUsuario,
+          emailLower,
+          chavePix: chave,
+          valorSolicitado: valor,
+          saldoAntes: saldoBase,
+          saldoDepois,
+          status: "processando",
+          prazoEstimadoMinutos: 60,
+          origem: "perfil",
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        });
+
+        const extrato = {
+          tipo: "saque_solicitado",
+          descricao: "Solicitação de saque Pix",
+          saqueId: saqueRef.id,
+          valor: -valor,
+          saldoAntes: saldoBase,
+          saldoDepois,
+          status: "processando",
+          chavePix: chave,
+          criadoEm: serverTimestamp(),
+        };
+
+        transaction.set(doc(db, "users", uidUsuario, "extrato", extratoId), extrato, {
+          merge: true,
+        });
+        transaction.set(doc(db, "usuarios", uidUsuario, "extrato", extratoId), extrato, {
+          merge: true,
+        });
+      });
+
+      setModalSaque(false);
+      setValorSaque("20");
+      setChavePix("");
+
+      mostrarAlerta(
+        "Saque solicitado",
+        "Seu saldo foi retido e o saque está em processamento. O prazo estimado é de até 1 hora."
+      );
+    } catch (error: any) {
+      console.log("Erro ao solicitar saque:", error);
+      mostrarAlerta(
+        "Erro no saque",
+        error?.message || "Não foi possível solicitar o saque."
+      );
+    } finally {
+      setSolicitandoSaque(false);
+    }
   }
 
   function abrirConfig() {
@@ -345,7 +555,7 @@ export default function PerfilScreen() {
               {formatarSaldo(saldoAtual)} BRL
             </Text>
             <Text style={styles.balanceInfo}>
-              Saldo atualizado online pelo Firebase.
+              Saldo Real.
             </Text>
           </View>
 
@@ -361,6 +571,38 @@ export default function PerfilScreen() {
             {depositando ? "Gerando Pix..." : "Depositar via Pix"}
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.withdrawButton, solicitandoSaque && styles.buttonDisabled]}
+          onPress={() => setModalSaque(true)}
+          disabled={solicitandoSaque}
+        >
+          <Text style={styles.withdrawText}>
+            {solicitandoSaque ? "Solicitando saque..." : "Solicitar saque"}
+          </Text>
+        </TouchableOpacity>
+
+        {saquesEmProcessamento().length > 0 && (
+          <View style={styles.saqueStatusCard}>
+            <Text style={styles.saqueStatusTitle}>Saque em processamento</Text>
+            <Text style={styles.saqueStatusText}>
+              Você possui {saquesEmProcessamento().length} saque(s) aguardando pagamento manual.
+              O prazo estimado é de até 1 hora.
+            </Text>
+
+            {saquesEmProcessamento().slice(0, 2).map((saque) => (
+              <View style={styles.saqueMiniCard} key={saque.id}>
+                <Text style={styles.saqueMiniValue}>
+                  {formatarSaldo(saque.valorSolicitado)} BRL
+                </Text>
+                <Text style={styles.saqueMiniText}>Pix: {saque.chavePix}</Text>
+                <Text style={styles.saqueMiniText}>
+                  Status: {textoStatusSaque(saque.status)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {user?.role === "admin" && (
           <TouchableOpacity
@@ -538,6 +780,74 @@ export default function PerfilScreen() {
         </View>
       </Modal>
 
+      <Modal visible={modalSaque} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Solicitar saque</Text>
+            <Text style={styles.modalSubtitle}>
+              O saque é manual. Após solicitar, o valor fica retido e pode levar até 1 hora.
+            </Text>
+
+            <View style={styles.availableBox}>
+              <Text style={styles.availableLabel}>Saldo disponível para saque</Text>
+              <Text style={styles.availableValue}>{formatarSaldo(saldoAtual)} BRL</Text>
+            </View>
+
+            <Text style={styles.modalLabel}>Valor do saque</Text>
+            <TextInput
+              style={styles.inputValor}
+              value={valorSaque}
+              onChangeText={setValorSaque}
+              keyboardType="numeric"
+              placeholder="Mínimo 20"
+              editable={!solicitandoSaque}
+            />
+
+            <TouchableOpacity
+              style={styles.useAllButton}
+              onPress={() => setValorSaque(String(Number(saldoAtual.toFixed(2))))}
+              disabled={solicitandoSaque || saldoAtual < 20}
+            >
+              <Text style={styles.useAllText}>Usar saldo disponível</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.modalLabel}>Chave Pix</Text>
+            <TextInput
+              style={styles.inputPix}
+              value={chavePix}
+              onChangeText={setChavePix}
+              placeholder="CPF, e-mail, telefone ou chave aleatória"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+              editable={!solicitandoSaque}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.modalWithdrawButton,
+                solicitandoSaque && styles.buttonDisabled,
+              ]}
+              onPress={solicitarSaque}
+              disabled={solicitandoSaque}
+            >
+              {solicitandoSaque ? (
+                <ActivityIndicator color="#111827" />
+              ) : (
+                <Text style={styles.modalWithdrawText}>Solicitar saque</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setModalSaque(false)}
+              disabled={solicitandoSaque}
+            >
+              <Text style={styles.cancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.bottomMenu}>
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
           <Text style={styles.menuIcon}>🏠</Text>
@@ -701,6 +1011,65 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  withdrawButton: {
+    backgroundColor: "#FFD500",
+    borderRadius: 18,
+    padding: 17,
+    alignItems: "center",
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#EAB308",
+  },
+
+  withdrawText: {
+    color: "#0B3D1C",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  saqueStatusCard: {
+    backgroundColor: "#FFF6BF",
+    borderRadius: 18,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#FFD500",
+  },
+
+  saqueStatusTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  saqueStatusText: {
+    color: "#4B5563",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: 6,
+  },
+
+  saqueMiniCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+  },
+
+  saqueMiniValue: {
+    color: "#006B2E",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  saqueMiniText: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+
   adminCard: {
     backgroundColor: "#111827",
     borderRadius: 22,
@@ -849,6 +1218,64 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
   },
 
+  modalLabel: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "900",
+    marginBottom: 7,
+    marginTop: 12,
+  },
+
+  availableBox: {
+    backgroundColor: "#F1FFF5",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#BEE7C9",
+    marginBottom: 8,
+  },
+
+  availableLabel: {
+    color: "#006B2E",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  availableValue: {
+    color: "#006B2E",
+    fontSize: 24,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+
+  useAllButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "#E7FBEF",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#BEE7C9",
+  },
+
+  useAllText: {
+    color: "#006B2E",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  inputPix: {
+    backgroundColor: "#F3F6F4",
+    borderRadius: 14,
+    padding: 15,
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
   modalDepositButton: {
     backgroundColor: "#006B2E",
     borderRadius: 16,
@@ -863,6 +1290,20 @@ const styles = StyleSheet.create({
 
   modalDepositText: {
     color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  modalWithdrawButton: {
+    backgroundColor: "#FFD500",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    marginTop: 16,
+  },
+
+  modalWithdrawText: {
+    color: "#0B3D1C",
     fontSize: 16,
     fontWeight: "900",
   },
