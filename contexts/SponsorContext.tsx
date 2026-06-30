@@ -82,6 +82,26 @@ function lerParametroPatrocinador() {
   }
 }
 
+function urlPediuLimpeza() {
+  try {
+    if (Platform.OS !== "web") return false;
+
+    const location = (globalThis as any)?.location;
+    if (!location?.search) return false;
+
+    const params = new URLSearchParams(location.search);
+
+    return (
+      params.get("limparPatrocinador") === "1" ||
+      params.get("patrocinador") === "normal" ||
+      params.get("patrocinador") === "limpar"
+    );
+  } catch (error) {
+    console.log("Erro ao verificar limpeza de patrocinador:", error);
+    return false;
+  }
+}
+
 function salvarCodigoPatrocinador(codigo: string) {
   const storage = getStorage();
   if (!storage) return;
@@ -91,13 +111,6 @@ function salvarCodigoPatrocinador(codigo: string) {
   if (codigoNormalizado) {
     storage.setItem(STORAGE_KEY, codigoNormalizado);
   }
-}
-
-function carregarCodigoSalvo() {
-  const storage = getStorage();
-  if (!storage) return "";
-
-  return normalizarCodigo(storage.getItem(STORAGE_KEY));
 }
 
 function removerCodigoSalvo() {
@@ -114,14 +127,26 @@ export function SponsorProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const codigoUrl = normalizarCodigo(lerParametroPatrocinador());
-    const codigoSalvo = carregarCodigoSalvo();
+    const pediuLimpeza = urlPediuLimpeza();
 
-    const codigoInicial = PATROCINADORES[codigoUrl] ? codigoUrl : codigoSalvo;
-
-    if (codigoInicial && PATROCINADORES[codigoInicial]) {
-      setCodigoPatrocinador(codigoInicial);
-      salvarCodigoPatrocinador(codigoInicial);
+    // Regra nova:
+    // - Só mostra patrocinador quando o link tiver ?patrocinador=aura
+    // - Link normal, sem patrocinador, volta para o app normal
+    // - Evita o problema de ficar preso no modelo Aura depois do teste
+    if (pediuLimpeza || !codigoUrl) {
+      setCodigoPatrocinador("");
+      removerCodigoSalvo();
+      return;
     }
+
+    if (PATROCINADORES[codigoUrl]) {
+      setCodigoPatrocinador(codigoUrl);
+      salvarCodigoPatrocinador(codigoUrl);
+      return;
+    }
+
+    setCodigoPatrocinador("");
+    removerCodigoSalvo();
   }, []);
 
   const patrocinador = useMemo(() => {
