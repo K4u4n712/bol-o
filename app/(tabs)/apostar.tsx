@@ -362,7 +362,7 @@ function CardAposta({ jogo }: { jogo: any }) {
       {temPatrocinador && patrocinador && (
         <View style={styles.cardSponsorMini}>
           <Text style={styles.cardSponsorMiniText}>
-            Patrocinado por {patrocinador.nome}
+            Oferecimento {patrocinador.nome}
           </Text>
         </View>
       )}
@@ -700,7 +700,7 @@ export default function ApostarScreen() {
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>{temPatrocinador ? "Palpite Aura" : "Fazer meu palpite"}</Text>
+        <Text style={styles.headerTitle}>Fazer meu palpite</Text>
 
         <TouchableOpacity style={styles.helpCircle} onPress={abrirAjuda}>
           <Text style={styles.helpText}>?</Text>
@@ -709,10 +709,10 @@ export default function ApostarScreen() {
 
       {temPatrocinador && patrocinador && (
         <View style={styles.sponsorTopCard}>
-          <Text style={styles.sponsorTopSmall}>EDIÇÃO ESPECIAL</Text>
+          <Text style={styles.sponsorTopSmall}>OFERECIMENTO</Text>
           <Text style={styles.sponsorTopName}>{patrocinador.nome}</Text>
           <Text style={styles.sponsorTopText}>
-            Seu palpite será marcado como origem do QR oficial da {patrocinador.nomeCurto}.
+            Experiência premium no Bolão10.
           </Text>
         </View>
       )}
@@ -1186,66 +1186,71 @@ const styles = StyleSheet.create({
   },
 
   safePatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#F7F3EA",
   },
 
   headerPatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#07110C",
     borderBottomWidth: 1,
-    borderBottomColor: "#D6A941",
+    borderBottomColor: "rgba(205, 162, 78, 0.55)",
   },
 
   sponsorTopCard: {
-    backgroundColor: "#061A10",
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
-    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.45)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginHorizontal: 20,
-    marginTop: 16,
+    marginTop: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   sponsorTopSmall: {
-    color: "#D1D5DB",
-    fontSize: 10,
+    color: "#7A6633",
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 2,
   },
 
   sponsorTopName: {
-    color: "#D6A941",
-    fontSize: 22,
+    color: "#123522",
+    fontSize: 19,
     fontWeight: "900",
-    marginTop: 3,
+    marginTop: 2,
   },
 
   sponsorTopText: {
-    color: "#FFFFFF",
-    fontSize: 13,
+    color: "#6B7280",
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 5,
+    lineHeight: 17,
+    marginTop: 3,
   },
 
   cardContainerPatrocinado: {
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.35)",
   },
 
   cardSponsorMini: {
     alignSelf: "center",
-    backgroundColor: "#061A10",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginBottom: 12,
+    backgroundColor: "#F7F3EA",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#D6A941",
+    borderColor: "rgba(205, 162, 78, 0.45)",
   },
 
   cardSponsorMiniText: {
-    color: "#D6A941",
-    fontSize: 12,
+    color: "#7A6633",
+    fontSize: 11,
     fontWeight: "900",
   }
 });

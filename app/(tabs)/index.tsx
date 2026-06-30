@@ -431,12 +431,9 @@ export default function HomeScreen() {
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text style={styles.sponsorHomeSmall}>PATROCINADO POR</Text>
+                <Text style={styles.sponsorHomeSmall}>OFERECIMENTO</Text>
                 <Text style={styles.sponsorHomeName}>{patrocinador.nome}</Text>
-              </View>
-
-              <View style={styles.sponsorQrBadge}>
-                <Text style={styles.sponsorQrText}>QR</Text>
+                <Text style={styles.sponsorHomeLine}>Experiência premium no Bolão10</Text>
               </View>
             </View>
           )}
@@ -519,23 +516,6 @@ export default function HomeScreen() {
                 <Text style={styles.priceText}>💸 Entrada: R$ {VALOR_APOSTA},00</Text>
               </View>
             </View>
-
-            {temPatrocinador && patrocinador && (
-              <View style={styles.sponsorAccessCard}>
-                <View style={styles.sponsorTicketIcon}>
-                  <Text style={styles.sponsorTicketText}>★</Text>
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sponsorAccessTitle}>
-                    Acesso especial {patrocinador.nome}
-                  </Text>
-                  <Text style={styles.sponsorAccessText}>
-                    Você entrou pelo QR oficial da {patrocinador.nomeCurto}.
-                  </Text>
-                </View>
-              </View>
-            )}
 
             <Text style={styles.sectionTitle}>Em quem você acha que vence?</Text>
 
@@ -1114,113 +1094,65 @@ const styles = StyleSheet.create({
   },
 
   safePatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#F7F3EA",
   },
 
   heroPatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#07110C",
     borderBottomWidth: 1,
-    borderBottomColor: "#D6A941",
+    borderBottomColor: "rgba(205, 162, 78, 0.55)",
   },
 
   sponsorHomeBanner: {
-    marginTop: 16,
-    backgroundColor: "#061A10",
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
-    borderRadius: 22,
-    padding: 14,
+    marginTop: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.55)",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
   },
 
   sponsorHomeLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#050A07",
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(205, 162, 78, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.75)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
   },
 
   sponsorHomeLogoText: {
-    color: "#D6A941",
-    fontSize: 18,
+    color: "#E8C878",
+    fontSize: 16,
     fontWeight: "900",
+    letterSpacing: 1,
   },
 
   sponsorHomeSmall: {
-    color: "#D1D5DB",
-    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.62)",
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 2,
   },
 
   sponsorHomeName: {
-    color: "#D6A941",
-    fontSize: 21,
+    color: "#F2D37C",
+    fontSize: 19,
     fontWeight: "900",
-    letterSpacing: 1,
+    letterSpacing: 0.4,
     marginTop: 2,
   },
 
-  sponsorQrBadge: {
-    backgroundColor: "#0B3D1C",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#D6A941",
-  },
-
-  sponsorQrText: {
-    color: "#D6A941",
-    fontWeight: "900",
-    fontSize: 13,
-  },
-
-  sponsorAccessCard: {
-    backgroundColor: "#061A10",
-    borderRadius: 22,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
-    marginTop: 18,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  sponsorTicketIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: "#D6A941",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
-  },
-
-  sponsorTicketText: {
-    color: "#061A10",
-    fontSize: 25,
-    fontWeight: "900",
-  },
-
-  sponsorAccessTitle: {
-    color: "#D6A941",
-    fontSize: 16,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  sponsorAccessText: {
-    color: "#FFFFFF",
-    fontSize: 13,
+  sponsorHomeLine: {
+    color: "rgba(255, 255, 255, 0.74)",
+    fontSize: 12,
     fontWeight: "700",
-    marginTop: 4,
-    lineHeight: 18,
+    marginTop: 2,
   }
 });

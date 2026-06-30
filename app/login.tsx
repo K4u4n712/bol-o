@@ -333,7 +333,7 @@ export default function LoginScreen() {
             </Text>
             <Text style={[styles.subtitle, temPatrocinador && styles.subtitlePatrocinado]}>
               {temPatrocinador && patrocinador
-                ? `Edição especial ${patrocinador.nome}`
+                ? `Oferecimento ${patrocinador.nome}`
                 : "Entre, crie sua conta e dê seu palpite."}
             </Text>
           </View>
@@ -345,7 +345,7 @@ export default function LoginScreen() {
               </View>
 
               <View style={{ flex: 1 }}>
-                <Text style={styles.sponsorSmall}>PATROCINADO POR</Text>
+                <Text style={styles.sponsorSmall}>OFERECIMENTO</Text>
                 <Text style={styles.sponsorName}>{patrocinador.nome}</Text>
                 <Text style={styles.sponsorDesc}>{patrocinador.descricao}</Text>
               </View>
@@ -904,90 +904,91 @@ const styles = StyleSheet.create({
   },
 
   safePatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#F7F3EA",
   },
 
   logoCirclePatrocinado: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#D6A941",
+    backgroundColor: "#07110C",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.75)",
   },
 
   logoPatrocinado: {
-    color: "#FFFFFF",
+    color: "#07110C",
   },
 
   subtitlePatrocinado: {
-    color: "#F7D989",
+    color: "#6B5A32",
   },
 
   sponsorWelcomeCard: {
-    backgroundColor: "#061A10",
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
-    padding: 18,
-    marginBottom: 16,
+    backgroundColor: "#07110C",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.6)",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 14,
     flexDirection: "row",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
   },
 
   sponsorLogoCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#050A07",
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(205, 162, 78, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.75)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginRight: 12,
   },
 
   sponsorLogoText: {
-    color: "#D6A941",
-    fontSize: 22,
+    color: "#E8C878",
+    fontSize: 17,
     fontWeight: "900",
     letterSpacing: 1,
   },
 
   sponsorSmall: {
-    color: "#D1D5DB",
-    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.62)",
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 2,
   },
 
   sponsorName: {
-    color: "#D6A941",
-    fontSize: 24,
+    color: "#F2D37C",
+    fontSize: 20,
     fontWeight: "900",
-    letterSpacing: 1,
+    letterSpacing: 0.4,
     marginTop: 2,
   },
 
   sponsorDesc: {
-    color: "#E5E7EB",
+    color: "rgba(255, 255, 255, 0.76)",
     fontSize: 12,
     fontWeight: "700",
-    marginTop: 5,
+    marginTop: 3,
     lineHeight: 17,
   },
 
   cardPatrocinado: {
     borderWidth: 1,
-    borderColor: "#D6A941",
+    borderColor: "rgba(205, 162, 78, 0.45)",
   },
 
   mainButtonPatrocinado: {
-    backgroundColor: "#D6A941",
+    backgroundColor: "#123522",
   },
 
   footerTextPatrocinado: {
-    color: "#F7D989",
+    color: "#6B5A32",
   }
 });

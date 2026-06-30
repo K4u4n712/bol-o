@@ -569,7 +569,7 @@ export default function BolaoScreen() {
           {temPatrocinador && patrocinador && (
             <View style={styles.sponsorHeroPill}>
               <Text style={styles.sponsorHeroPillText}>
-                Patrocinado por {patrocinador.nome}
+                Oferecimento {patrocinador.nome}
               </Text>
             </View>
           )}
@@ -649,7 +649,7 @@ export default function BolaoScreen() {
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>{temPatrocinador ? "Bolão Aura" : "Bolão"}</Text>
+        <Text style={styles.headerTitle}>Bolão</Text>
 
         <View style={styles.headerCircle}>
           <Text style={styles.headerIcon}>👥</Text>
@@ -658,10 +658,10 @@ export default function BolaoScreen() {
 
       {temPatrocinador && patrocinador && (
         <View style={styles.sponsorBolaoTop}>
-          <Text style={styles.sponsorBolaoSmall}>QR EXCLUSIVO</Text>
+          <Text style={styles.sponsorBolaoSmall}>OFERECIMENTO</Text>
           <Text style={styles.sponsorBolaoName}>{patrocinador.nome}</Text>
           <Text style={styles.sponsorBolaoText}>
-            Bolões exibidos com a experiência patrocinada da {patrocinador.nomeCurto}.
+            Experiência premium no Bolão10.
           </Text>
         </View>
       )}
@@ -1282,66 +1282,72 @@ const styles = StyleSheet.create({
   },
 
   safePatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#F7F3EA",
   },
 
   headerPatrocinado: {
-    backgroundColor: "#050A07",
+    backgroundColor: "#07110C",
     borderBottomWidth: 1,
-    borderBottomColor: "#D6A941",
+    borderBottomColor: "rgba(205, 162, 78, 0.55)",
   },
 
   sponsorBolaoTop: {
-    backgroundColor: "#061A10",
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
-    borderRadius: 22,
-    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.45)",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginHorizontal: 20,
-    marginTop: 16,
+    marginTop: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   sponsorBolaoSmall: {
-    color: "#D1D5DB",
-    fontSize: 10,
+    color: "#7A6633",
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 2,
   },
 
   sponsorBolaoName: {
-    color: "#D6A941",
-    fontSize: 22,
+    color: "#123522",
+    fontSize: 19,
     fontWeight: "900",
-    marginTop: 3,
+    marginTop: 2,
   },
 
   sponsorBolaoText: {
-    color: "#FFFFFF",
-    fontSize: 13,
+    color: "#6B7280",
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 5,
+    lineHeight: 17,
+    marginTop: 3,
   },
 
   heroCardPatrocinado: {
-    backgroundColor: "#061A10",
-    borderWidth: 1.5,
-    borderColor: "#D6A941",
+    backgroundColor: "#07110C",
+    borderWidth: 1,
+    borderColor: "rgba(205, 162, 78, 0.55)",
   },
 
   sponsorHeroPill: {
-    backgroundColor: "#050A07",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginBottom: 14,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(205, 162, 78, 0.12)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#D6A941",
+    borderColor: "rgba(205, 162, 78, 0.45)",
   },
 
   sponsorHeroPillText: {
-    color: "#D6A941",
-    fontSize: 12,
+    color: "#F2D37C",
+    fontSize: 11,
     fontWeight: "900",
   }
 });
