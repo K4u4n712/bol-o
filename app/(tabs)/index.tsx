@@ -22,6 +22,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "../../contexts/AuthContext";
+import { useSponsor } from "../../contexts/SponsorContext";
 
 const VALOR_APOSTA = 10;
 
@@ -181,6 +182,7 @@ function BandeiraTime({
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { patrocinador, temPatrocinador } = useSponsor();
 
   const [jogosDisponiveis, setJogosDisponiveis] = useState<any[]>([]);
   const [loadingJogo, setLoadingJogo] = useState(true);
@@ -395,15 +397,15 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
+    <SafeAreaView style={[styles.safe, temPatrocinador && styles.safePatrocinado]}>
+      <StatusBar barStyle="light-content" backgroundColor={temPatrocinador ? "#050A07" : "#006B2E"} />
 
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
+        <View style={[styles.hero, temPatrocinador && styles.heroPatrocinado]}>
           <View style={styles.topBar}>
             <TouchableOpacity>
               <Text style={styles.menuIconTop}>☰</Text>
@@ -421,6 +423,23 @@ export default function HomeScreen() {
               {notificacao && <View style={styles.redDot} />}
             </TouchableOpacity>
           </View>
+
+          {temPatrocinador && patrocinador && (
+            <View style={styles.sponsorHomeBanner}>
+              <View style={styles.sponsorHomeLogo}>
+                <Text style={styles.sponsorHomeLogoText}>AL</Text>
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sponsorHomeSmall}>PATROCINADO POR</Text>
+                <Text style={styles.sponsorHomeName}>{patrocinador.nome}</Text>
+              </View>
+
+              <View style={styles.sponsorQrBadge}>
+                <Text style={styles.sponsorQrText}>QR</Text>
+              </View>
+            </View>
+          )}
 
           <View style={styles.welcomeBox}>
             <Text style={styles.welcomeTitle}>Olá, {user?.nome || "Jogador"}! 👋</Text>
@@ -500,6 +519,23 @@ export default function HomeScreen() {
                 <Text style={styles.priceText}>💸 Entrada: R$ {VALOR_APOSTA},00</Text>
               </View>
             </View>
+
+            {temPatrocinador && patrocinador && (
+              <View style={styles.sponsorAccessCard}>
+                <View style={styles.sponsorTicketIcon}>
+                  <Text style={styles.sponsorTicketText}>★</Text>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sponsorAccessTitle}>
+                    Acesso especial {patrocinador.nome}
+                  </Text>
+                  <Text style={styles.sponsorAccessText}>
+                    Você entrou pelo QR oficial da {patrocinador.nomeCurto}.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             <Text style={styles.sectionTitle}>Em quem você acha que vence?</Text>
 
@@ -1076,4 +1112,115 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+
+  safePatrocinado: {
+    backgroundColor: "#050A07",
+  },
+
+  heroPatrocinado: {
+    backgroundColor: "#050A07",
+    borderBottomWidth: 1,
+    borderBottomColor: "#D6A941",
+  },
+
+  sponsorHomeBanner: {
+    marginTop: 16,
+    backgroundColor: "#061A10",
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    borderRadius: 22,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sponsorHomeLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+
+  sponsorHomeLogoText: {
+    color: "#D6A941",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  sponsorHomeSmall: {
+    color: "#D1D5DB",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+
+  sponsorHomeName: {
+    color: "#D6A941",
+    fontSize: 21,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+
+  sponsorQrBadge: {
+    backgroundColor: "#0B3D1C",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#D6A941",
+  },
+
+  sponsorQrText: {
+    color: "#D6A941",
+    fontWeight: "900",
+    fontSize: 13,
+  },
+
+  sponsorAccessCard: {
+    backgroundColor: "#061A10",
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    marginTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sponsorTicketIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#D6A941",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  sponsorTicketText: {
+    color: "#061A10",
+    fontSize: 25,
+    fontWeight: "900",
+  },
+
+  sponsorAccessTitle: {
+    color: "#D6A941",
+    fontSize: 16,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+
+  sponsorAccessText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
+    lineHeight: 18,
+  }
 });

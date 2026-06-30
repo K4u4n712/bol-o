@@ -2,6 +2,7 @@ import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import React, { useState, useEffect } from "react";
 import { router } from "expo-router";
 import { useAuth } from "../../contexts/AuthContext";
+import { useSponsor } from "../../contexts/SponsorContext";
 import { db } from "../../services/firebaseConfig";
 import {
   doc,
@@ -30,6 +31,7 @@ const VALOR_APOSTA = 10;
 // ============================================================================
 function CardAposta({ jogo }: { jogo: any }) {
   const { user } = useAuth();
+  const { patrocinador, temPatrocinador } = useSponsor();
 
   const [golsCasa, setGolsCasa] = useState(0);
   const [golsFora, setGolsFora] = useState(0);
@@ -227,6 +229,9 @@ function CardAposta({ jogo }: { jogo: any }) {
 
         const dadosAposta: any = {
           userId: uid,
+          patrocinadorId: patrocinador?.id || "",
+          patrocinadorNome: patrocinador?.nome || "",
+          origem: patrocinador ? `qr_${patrocinador.id}` : "organico",
           nome: nomeUsuario,
           email: emailUsuario,
           emailLower: emailUsuario.toLowerCase(),
@@ -353,7 +358,15 @@ function CardAposta({ jogo }: { jogo: any }) {
   }
 
   return (
-    <View style={styles.cardContainer}>
+    <View style={[styles.cardContainer, temPatrocinador && styles.cardContainerPatrocinado]}>
+      {temPatrocinador && patrocinador && (
+        <View style={styles.cardSponsorMini}>
+          <Text style={styles.cardSponsorMiniText}>
+            Patrocinado por {patrocinador.nome}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.matchMiniCard}>
         <View style={styles.miniTeam}>
           <Image
@@ -543,6 +556,8 @@ function CardAposta({ jogo }: { jogo: any }) {
 // TELA PRINCIPAL DE APOSTAS
 // ============================================================================
 export default function ApostarScreen() {
+  const { patrocinador, temPatrocinador } = useSponsor();
+
   const [jogosAbertos, setJogosAbertos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -677,20 +692,30 @@ export default function ApostarScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
+    <SafeAreaView style={[styles.safe, temPatrocinador && styles.safePatrocinado]}>
+      <StatusBar barStyle="light-content" backgroundColor={temPatrocinador ? "#050A07" : "#006B2E"} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, temPatrocinador && styles.headerPatrocinado]}>
         <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Fazer meu palpite</Text>
+        <Text style={styles.headerTitle}>{temPatrocinador ? "Palpite Aura" : "Fazer meu palpite"}</Text>
 
         <TouchableOpacity style={styles.helpCircle} onPress={abrirAjuda}>
           <Text style={styles.helpText}>?</Text>
         </TouchableOpacity>
       </View>
+
+      {temPatrocinador && patrocinador && (
+        <View style={styles.sponsorTopCard}>
+          <Text style={styles.sponsorTopSmall}>EDIÇÃO ESPECIAL</Text>
+          <Text style={styles.sponsorTopName}>{patrocinador.nome}</Text>
+          <Text style={styles.sponsorTopText}>
+            Seu palpite será marcado como origem do QR oficial da {patrocinador.nomeCurto}.
+          </Text>
+        </View>
+      )}
 
       {jogosAbertos.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -1159,4 +1184,68 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "900",
   },
+
+  safePatrocinado: {
+    backgroundColor: "#050A07",
+  },
+
+  headerPatrocinado: {
+    backgroundColor: "#050A07",
+    borderBottomWidth: 1,
+    borderBottomColor: "#D6A941",
+  },
+
+  sponsorTopCard: {
+    backgroundColor: "#061A10",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    padding: 16,
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+
+  sponsorTopSmall: {
+    color: "#D1D5DB",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+
+  sponsorTopName: {
+    color: "#D6A941",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+
+  sponsorTopText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 5,
+  },
+
+  cardContainerPatrocinado: {
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+  },
+
+  cardSponsorMini: {
+    alignSelf: "center",
+    backgroundColor: "#061A10",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#D6A941",
+  },
+
+  cardSponsorMiniText: {
+    color: "#D6A941",
+    fontSize: 12,
+    fontWeight: "900",
+  }
 });

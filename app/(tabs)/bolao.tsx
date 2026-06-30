@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { db } from "../../services/firebaseConfig";
 import { useAuth } from "../../contexts/AuthContext";
+import { useSponsor } from "../../contexts/SponsorContext";
 import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import {
   View,
@@ -75,6 +76,7 @@ const DURACAO_ESTIMADA_JOGO_MS = 2 * 60 * 60 * 1000;
 
 export default function BolaoScreen() {
   const { user } = useAuth();
+  const { patrocinador, temPatrocinador } = useSponsor();
   const params = useLocalSearchParams();
 
   const focusGameId =
@@ -563,7 +565,15 @@ export default function BolaoScreen() {
 
     return (
       <View style={[styles.carouselSlide, { width: cardWidth }]}>
-        <View style={styles.heroCard}>
+        <View style={[styles.heroCard, temPatrocinador && styles.heroCardPatrocinado]}>
+          {temPatrocinador && patrocinador && (
+            <View style={styles.sponsorHeroPill}>
+              <Text style={styles.sponsorHeroPillText}>
+                Patrocinado por {patrocinador.nome}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.liveRowTop}>
             <Animated.View
               style={[
@@ -631,20 +641,30 @@ export default function BolaoScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
+    <SafeAreaView style={[styles.safe, temPatrocinador && styles.safePatrocinado]}>
+      <StatusBar barStyle="light-content" backgroundColor={temPatrocinador ? "#050A07" : "#006B2E"} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, temPatrocinador && styles.headerPatrocinado]}>
         <TouchableOpacity onPress={() => router.push("/")}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Bolão</Text>
+        <Text style={styles.headerTitle}>{temPatrocinador ? "Bolão Aura" : "Bolão"}</Text>
 
         <View style={styles.headerCircle}>
           <Text style={styles.headerIcon}>👥</Text>
         </View>
       </View>
+
+      {temPatrocinador && patrocinador && (
+        <View style={styles.sponsorBolaoTop}>
+          <Text style={styles.sponsorBolaoSmall}>QR EXCLUSIVO</Text>
+          <Text style={styles.sponsorBolaoName}>{patrocinador.nome}</Text>
+          <Text style={styles.sponsorBolaoText}>
+            Bolões exibidos com a experiência patrocinada da {patrocinador.nomeCurto}.
+          </Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -1260,4 +1280,68 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontWeight: "900",
   },
+
+  safePatrocinado: {
+    backgroundColor: "#050A07",
+  },
+
+  headerPatrocinado: {
+    backgroundColor: "#050A07",
+    borderBottomWidth: 1,
+    borderBottomColor: "#D6A941",
+  },
+
+  sponsorBolaoTop: {
+    backgroundColor: "#061A10",
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    borderRadius: 22,
+    padding: 16,
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+
+  sponsorBolaoSmall: {
+    color: "#D1D5DB",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+
+  sponsorBolaoName: {
+    color: "#D6A941",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+
+  sponsorBolaoText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 5,
+  },
+
+  heroCardPatrocinado: {
+    backgroundColor: "#061A10",
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+  },
+
+  sponsorHeroPill: {
+    backgroundColor: "#050A07",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#D6A941",
+  },
+
+  sponsorHeroPillText: {
+    color: "#D6A941",
+    fontSize: 12,
+    fontWeight: "900",
+  }
 });

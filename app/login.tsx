@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { useSponsor } from "../contexts/SponsorContext";
 import { db } from "../services/firebaseConfig";
 
 const STORAGE_EMAIL_KEY = "bolao10_email_lembrado";
@@ -71,6 +72,7 @@ function emailEhValido(email: string) {
 
 export default function LoginScreen() {
   const { login, register, user } = useAuth();
+  const { patrocinador, temPatrocinador } = useSponsor();
 
   const [modoCadastro, setModoCadastro] = useState(false);
   const [nome, setNome] = useState("");
@@ -310,8 +312,8 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
+    <SafeAreaView style={[styles.safe, temPatrocinador && styles.safePatrocinado]}>
+      <StatusBar barStyle="light-content" backgroundColor={temPatrocinador ? "#050A07" : "#006B2E"} />
 
       <KeyboardAvoidingView
         style={styles.keyboard}
@@ -323,14 +325,34 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.logoBox}>
-            <View style={styles.logoCircle}>
+            <View style={[styles.logoCircle, temPatrocinador && styles.logoCirclePatrocinado]}>
               <Text style={styles.logoIcon}>⚽</Text>
             </View>
-            <Text style={styles.logo}>Bolão10</Text>
-            <Text style={styles.subtitle}>Entre, crie sua conta e dê seu palpite.</Text>
+            <Text style={[styles.logo, temPatrocinador && styles.logoPatrocinado]}>
+              Bolão10
+            </Text>
+            <Text style={[styles.subtitle, temPatrocinador && styles.subtitlePatrocinado]}>
+              {temPatrocinador && patrocinador
+                ? `Edição especial ${patrocinador.nome}`
+                : "Entre, crie sua conta e dê seu palpite."}
+            </Text>
           </View>
 
-          <View style={styles.card}>
+          {temPatrocinador && patrocinador && (
+            <View style={styles.sponsorWelcomeCard}>
+              <View style={styles.sponsorLogoCircle}>
+                <Text style={styles.sponsorLogoText}>AL</Text>
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sponsorSmall}>PATROCINADO POR</Text>
+                <Text style={styles.sponsorName}>{patrocinador.nome}</Text>
+                <Text style={styles.sponsorDesc}>{patrocinador.descricao}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={[styles.card, temPatrocinador && styles.cardPatrocinado]}>
             <View style={styles.modeTabs}>
               <TouchableOpacity
                 style={[styles.modeTab, !modoCadastro && styles.modeTabActive]}
@@ -440,7 +462,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.mainButton, carregando && styles.mainButtonDisabled]}
+              style={[styles.mainButton, temPatrocinador && styles.mainButtonPatrocinado, carregando && styles.mainButtonDisabled]}
               onPress={acaoPrincipal}
               disabled={carregando}
             >
@@ -470,7 +492,11 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <Text style={styles.footerText}>Bolão10 • simples, rápido e fácil de usar</Text>
+          <Text style={[styles.footerText, temPatrocinador && styles.footerTextPatrocinado]}>
+            {temPatrocinador && patrocinador
+              ? `Bolão10 • ${patrocinador.avisoQr}`
+              : "Bolão10 • simples, rápido e fácil de usar"}
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -876,4 +902,92 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
+
+  safePatrocinado: {
+    backgroundColor: "#050A07",
+  },
+
+  logoCirclePatrocinado: {
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#D6A941",
+  },
+
+  logoPatrocinado: {
+    color: "#FFFFFF",
+  },
+
+  subtitlePatrocinado: {
+    color: "#F7D989",
+  },
+
+  sponsorWelcomeCard: {
+    backgroundColor: "#061A10",
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    padding: 18,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+
+  sponsorLogoCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "#D6A941",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+
+  sponsorLogoText: {
+    color: "#D6A941",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+
+  sponsorSmall: {
+    color: "#D1D5DB",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+
+  sponsorName: {
+    color: "#D6A941",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+
+  sponsorDesc: {
+    color: "#E5E7EB",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 5,
+    lineHeight: 17,
+  },
+
+  cardPatrocinado: {
+    borderWidth: 1,
+    borderColor: "#D6A941",
+  },
+
+  mainButtonPatrocinado: {
+    backgroundColor: "#D6A941",
+  },
+
+  footerTextPatrocinado: {
+    color: "#F7D989",
+  }
 });
