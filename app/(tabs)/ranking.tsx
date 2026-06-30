@@ -1,14 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { mostrarAlerta } from "../../utils/mostrarAlerta";
 import { router } from "expo-router";
 import { db } from "../../services/firebaseConfig";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  where,
-} from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import {
   View,
   Text,
@@ -17,184 +11,253 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
-  Alert,
 } from "react-native";
-
-type Aposta = {
-  id?: string;
-  nome: string;
-  email: string;
-  placar: string;
-  golsBrasil: number;
-  golsAdversario: number;
-  valor: number;
-};
-
-type ResultadoOficial = {
-  golsBrasil: number;
-  golsAdversario: number;
-};
 
 type RankingItem = {
   nome: string;
   email: string;
+  emailLower?: string;
   placar: string;
   pontos: number;
   venceu: boolean;
-  premio: number;
+  premio?: number;
+  premioRecebido?: number;
 };
 
-const JOGO_ID = "brasil-argentina-2026";
-const VALOR_APOSTA = 10;
+type ResultadoRanking = {
+  id: string;
+  jogoId: string;
+  jogo: string;
+  processado?: boolean;
+  resultadoOficial?: {
+    golsCasa?: number;
+    golsFora?: number;
+    placar?: string;
+  };
+  totalPalpites?: number;
+  totalArrecadado?: number;
+  taxaAdmin?: number;
+  premioLiquido?: number;
+  quantidadeGanhadores?: number;
+  premioPorVencedor?: number;
+  ganhadores?: any[];
+  ranking?: RankingItem[];
+  modoProcessamento?: string;
+  processadoEmTexto?: string;
+  processadoEm?: any;
+  atualizadoEm?: any;
+  preservadoEm?: any;
+  criadoEm?: any;
+  origemHistorico?: string;
+};
+
+type RankingGeralItem = {
+  nome: string;
+  email: string;
+  pontos: number;
+  vitorias: number;
+  premios: number;
+  jogos: number;
+};
 
 export default function RankingScreen() {
-  const [apostas, setApostas] = useState<Aposta[]>([]);
-  const [resultado, setResultado] = useState<ResultadoOficial | null>(null);
-  const [ranking, setRanking] = useState<RankingItem[]>([]);
+  const [resultadosAtuais, setResultadosAtuais] = useState<ResultadoRanking[]>([]);
+  const [rankingHistorico, setRankingHistorico] = useState<ResultadoRanking[]>([]);
 
   useEffect(() => {
-    const apostasRef = collection(db, "apostas");
-    const q = query(apostasRef, where("jogoId", "==", JOGO_ID));
-
-    const unsubscribeApostas = onSnapshot(
-      q,
+    const unsubscribeResultados = onSnapshot(
+      collection(db, "resultados"),
       (snapshot) => {
-        const lista: Aposta[] = snapshot.docs.map((documento) => {
-          const data = documento.data();
+        const lista: ResultadoRanking[] = snapshot.docs
+          .map((documento) => normalizarResultado(documento.id, documento.data()))
+          .filter((item) => item.processado && (item.ranking || []).length > 0);
 
-          return {
-            id: documento.id,
-            nome: data.nome || "Usuário",
-            email: data.email || "",
-            placar: data.placar || "",
-            golsBrasil: Number(data.golsBrasil || 0),
-            golsAdversario: Number(data.golsAdversario || 0),
-            valor: Number(data.valor || VALOR_APOSTA),
-          };
-        });
-
-        setApostas(lista);
+        setResultadosAtuais(lista);
       },
       (error) => {
-        console.log("Erro ao carregar apostas:", error);
+        console.log("Erro ao carregar resultados atuais:", error);
       }
     );
 
-    const resultadoRef = doc(db, "resultados", JOGO_ID);
-
-    const unsubscribeResultado = onSnapshot(
-      resultadoRef,
+    const unsubscribeHistorico = onSnapshot(
+      collection(db, "ranking_historico"),
       (snapshot) => {
-        if (!snapshot.exists()) {
-          setResultado(null);
-          return;
-        }
+        const lista: ResultadoRanking[] = snapshot.docs
+          .map((documento) => normalizarResultado(documento.id, documento.data()))
+          .filter((item) => (item.ranking || []).length > 0);
 
-        const data = snapshot.data();
-
-        setResultado({
-          golsBrasil: Number(data.golsBrasil || 0),
-          golsAdversario: Number(data.golsAdversario || 0),
-        });
+        setRankingHistorico(lista);
       },
       (error) => {
-        console.log("Erro ao carregar resultado:", error);
+        console.log("Erro ao carregar ranking histórico:", error);
       }
     );
 
     return () => {
-      unsubscribeApostas();
-      unsubscribeResultado();
+      unsubscribeResultados();
+      unsubscribeHistorico();
     };
   }, []);
 
-  useEffect(() => {
-    calcularRanking();
-  }, [apostas, resultado]);
+  const rankingsSalvos = useMemo(() => {
+    const mapa: Record<string, ResultadoRanking> = {};
 
-  function calcularRanking() {
-    if (!resultado) {
-      setRanking([]);
-      return;
-    }
-
-    const totalBolao = apostas.reduce((total, item) => {
-      return total + Number(item.valor || VALOR_APOSTA);
-    }, 0);
-
-    const ganhadoresExatos = apostas.filter(
-      (item) =>
-        item.golsBrasil === resultado.golsBrasil &&
-        item.golsAdversario === resultado.golsAdversario
-    );
-
-    const premioPorGanhador =
-      ganhadoresExatos.length > 0 ? totalBolao / ganhadoresExatos.length : 0;
-
-    const lista: RankingItem[] = apostas.map((item) => {
-      const acertouPlacar =
-        item.golsBrasil === resultado.golsBrasil &&
-        item.golsAdversario === resultado.golsAdversario;
-
-      const acertouVencedor = verificarVencedor(
-        item.golsBrasil,
-        item.golsAdversario,
-        resultado.golsBrasil,
-        resultado.golsAdversario
-      );
-
-      const pontos = acertouPlacar ? 10 : acertouVencedor ? 3 : 0;
-
-      return {
-        nome: item.nome,
-        email: item.email,
-        placar: item.placar,
-        pontos,
-        venceu: acertouPlacar,
-        premio: acertouPlacar ? premioPorGanhador : 0,
-      };
+    // O histórico vem primeiro porque ele é a cópia permanente.
+    rankingHistorico.forEach((item) => {
+      mapa[item.jogoId || item.id] = item;
     });
 
-    lista.sort((a, b) => {
+    // Se ainda não houve "zerar jogo", o resultado atual também aparece.
+    resultadosAtuais.forEach((item) => {
+      const chave = item.jogoId || item.id;
+
+      if (!mapa[chave]) {
+        mapa[chave] = item;
+      }
+    });
+
+    return Object.values(mapa).sort((a, b) => {
+      const dataB = pegarMillis(b.atualizadoEm || b.preservadoEm || b.processadoEm || b.criadoEm);
+      const dataA = pegarMillis(a.atualizadoEm || a.preservadoEm || a.processadoEm || a.criadoEm);
+
+      return dataB - dataA;
+    });
+  }, [resultadosAtuais, rankingHistorico]);
+
+  const rankingGeral = useMemo(() => {
+    const mapa: Record<string, RankingGeralItem> = {};
+
+    rankingsSalvos.forEach((resultado) => {
+      (resultado.ranking || []).forEach((item) => {
+        const email = String(item.email || item.emailLower || "").trim().toLowerCase();
+        const chave = email || normalizarTexto(item.nome || "Usuário");
+        const premio = Number(item.premioRecebido ?? item.premio ?? 0);
+
+        if (!mapa[chave]) {
+          mapa[chave] = {
+            nome: item.nome || "Usuário",
+            email: email || item.email || "",
+            pontos: 0,
+            vitorias: 0,
+            premios: 0,
+            jogos: 0,
+          };
+        }
+
+        mapa[chave].pontos += Number(item.pontos || 0);
+        mapa[chave].vitorias += item.venceu ? 1 : 0;
+        mapa[chave].premios += premio;
+        mapa[chave].jogos += 1;
+      });
+    });
+
+    return Object.values(mapa).sort((a, b) => {
       if (b.pontos !== a.pontos) return b.pontos - a.pontos;
+      if (b.vitorias !== a.vitorias) return b.vitorias - a.vitorias;
+      if (b.premios !== a.premios) return b.premios - a.premios;
       return a.nome.localeCompare(b.nome);
     });
+  }, [rankingsSalvos]);
 
-    setRanking(lista);
+  function normalizarResultado(id: string, data: any): ResultadoRanking {
+    return {
+      id,
+      jogoId: String(data.jogoId || id),
+      jogo: data.jogo || "Jogo",
+      processado: Boolean(data.processado ?? true),
+      resultadoOficial: data.resultadoOficial || null,
+      totalPalpites: Number(data.totalPalpites || 0),
+      totalArrecadado: Number(data.totalArrecadado || 0),
+      taxaAdmin: Number(data.taxaAdmin || 0),
+      premioLiquido: Number(data.premioLiquido || 0),
+      quantidadeGanhadores: Number(data.quantidadeGanhadores || 0),
+      premioPorVencedor: Number(data.premioPorVencedor || 0),
+      ganhadores: Array.isArray(data.ganhadores) ? data.ganhadores : [],
+      ranking: Array.isArray(data.ranking) ? data.ranking : [],
+      modoProcessamento: data.modoProcessamento || "",
+      processadoEmTexto: data.processadoEmTexto || "",
+      processadoEm: data.processadoEm,
+      atualizadoEm: data.atualizadoEm,
+      preservadoEm: data.preservadoEm,
+      criadoEm: data.criadoEm,
+      origemHistorico: data.origemHistorico || "",
+    };
   }
 
-  function verificarVencedor(
-    apostaBrasil: number,
-    apostaAdversario: number,
-    resultadoBrasil: number,
-    resultadoAdversario: number
-  ) {
-    const vencedorAposta =
-      apostaBrasil > apostaAdversario
-        ? "brasil"
-        : apostaBrasil < apostaAdversario
-        ? "argentina"
-        : "empate";
+  function pegarMillis(data?: any) {
+    if (!data) return 0;
 
-    const vencedorResultado =
-      resultadoBrasil > resultadoAdversario
-        ? "brasil"
-        : resultadoBrasil < resultadoAdversario
-        ? "argentina"
-        : "empate";
+    if (typeof data.toMillis === "function") {
+      return data.toMillis();
+    }
 
-    return vencedorAposta === vencedorResultado;
+    if (data.seconds) {
+      return data.seconds * 1000;
+    }
+
+    return new Date(data).getTime();
+  }
+
+  function normalizarTexto(texto: string) {
+    return String(texto || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function formatarMoeda(valor: number) {
+    return `${Number(valor || 0).toFixed(2)} BRL`;
+  }
+
+  function posicao(index: number) {
+    return `${index + 1}º`;
+  }
+
+  function textoResultado(resultado: ResultadoRanking) {
+    if (resultado.resultadoOficial?.placar) {
+      return resultado.resultadoOficial.placar;
+    }
+
+    const golsCasa = resultado.resultadoOficial?.golsCasa;
+    const golsFora = resultado.resultadoOficial?.golsFora;
+
+    if (typeof golsCasa === "number" && typeof golsFora === "number") {
+      return `${golsCasa} x ${golsFora}`;
+    }
+
+    return "Resultado salvo";
+  }
+
+  function textoDataResultado(resultado: ResultadoRanking) {
+    if (resultado.processadoEmTexto) {
+      return resultado.processadoEmTexto;
+    }
+
+    const millis = pegarMillis(
+      resultado.atualizadoEm ||
+        resultado.preservadoEm ||
+        resultado.processadoEm ||
+        resultado.criadoEm
+    );
+
+    if (!millis) return "Data não informada";
+
+    return new Date(millis).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function abrirInstrucoes() {
     mostrarAlerta(
       "Como funciona o ranking?",
-      "Placar exato: 10 pontos.\n\nAcertou apenas o vencedor ou empate: 3 pontos.\n\nErrou tudo: 0 pontos.\n\nO prêmio é dividido entre quem acertou o placar exato."
+      "Placar exato: 10 pontos.\n\nAcertou apenas o vencedor ou empate: 3 pontos.\n\nErrou tudo: 0 pontos.\n\nAgora o ranking fica salvo no histórico mesmo depois de zerar o jogo."
     );
-  }
-
-  function posicao(index: number) {
-    return `${index + 1}º`;
   }
 
   return (
@@ -219,37 +282,37 @@ export default function RankingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.heroCard}>
-          <Text style={styles.heroBadge}>🏆 RANKING DO BOLÃO</Text>
+          <Text style={styles.heroBadge}>🏆 RANKING PERMANENTE</Text>
 
           <Text style={styles.heroTitle}>
-            {resultado ? "Resultado calculado" : "Aguardando resultado"}
+            {rankingsSalvos.length > 0 ? "Histórico salvo" : "Aguardando ranking"}
           </Text>
 
           <Text style={styles.heroText}>
-            {resultado
-              ? `Resultado oficial: Brasil ${resultado.golsBrasil} x ${resultado.golsAdversario} Argentina`
-              : "O administrador precisa informar o placar oficial para calcular o ranking."}
+            {rankingsSalvos.length > 0
+              ? "Os rankings ficam salvos mesmo depois que o administrador zera o jogo."
+              : "Assim que um resultado for calculado no painel admin, o ranking aparecerá aqui."}
           </Text>
         </View>
 
         <Text style={styles.sectionTitle}>Classificação geral</Text>
 
-        {ranking.length === 0 && (
+        {rankingGeral.length === 0 && (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>Ranking ainda não calculado</Text>
             <Text style={styles.emptyText}>
-              O administrador precisa informar o resultado oficial no painel.
+              Finalize um jogo no painel admin para salvar o primeiro ranking.
             </Text>
           </View>
         )}
 
-        {ranking.map((item, index) => (
+        {rankingGeral.map((item, index) => (
           <View
             style={[
               styles.rankingCard,
               index === 0 && styles.rankingCardFirst,
             ]}
-            key={`${item.email}-${index}`}
+            key={`${item.email || item.nome}-${index}`}
           >
             <View
               style={[
@@ -264,20 +327,13 @@ export default function RankingScreen() {
               <Text style={styles.playerName}>{item.nome}</Text>
 
               <Text style={styles.playerBet}>
-                Brasil {item.placar} Argentina
+                {item.jogos} jogo(s) no histórico
               </Text>
 
-              <Text
-                style={[
-                  styles.playerStatus,
-                  item.venceu && styles.winnerStatus,
-                ]}
-              >
-                {item.venceu
-                  ? `🏆 Venceu ${item.premio.toFixed(2)} BRL`
-                  : item.pontos > 0
-                  ? "Acertou o vencedor"
-                  : "Não pontuou"}
+              <Text style={[styles.playerStatus, item.vitorias > 0 && styles.winnerStatus]}>
+                {item.vitorias > 0
+                  ? `🏆 ${item.vitorias} vitória(s) • ${formatarMoeda(item.premios)}`
+                  : "Ainda não venceu bolão"}
               </Text>
             </View>
 
@@ -288,12 +344,91 @@ export default function RankingScreen() {
           </View>
         ))}
 
+        <Text style={styles.sectionTitle}>Rankings por jogo</Text>
+
+        {rankingsSalvos.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Nenhum histórico salvo</Text>
+            <Text style={styles.emptyText}>
+              O histórico será criado automaticamente quando o admin calcular os vencedores.
+            </Text>
+          </View>
+        )}
+
+        {rankingsSalvos.map((resultado) => {
+          const rankingDoJogo = resultado.ranking || [];
+          const topRanking = rankingDoJogo.slice(0, 10);
+
+          return (
+            <View style={styles.historyCard} key={resultado.jogoId || resultado.id}>
+              <View style={styles.historyHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyBadge}>RANKING SALVO</Text>
+                  <Text style={styles.historyTitle}>{resultado.jogo}</Text>
+                  <Text style={styles.historySub}>
+                    Resultado: {textoResultado(resultado)}
+                  </Text>
+                  <Text style={styles.historyDate}>
+                    {textoDataResultado(resultado)}
+                  </Text>
+                </View>
+
+                <View style={styles.historyMiniBox}>
+                  <Text style={styles.historyMiniNumber}>
+                    {resultado.totalPalpites || rankingDoJogo.length}
+                  </Text>
+                  <Text style={styles.historyMiniLabel}>palpites</Text>
+                </View>
+              </View>
+
+              <View style={styles.historyStats}>
+                <Text style={styles.historyStatText}>
+                  Total: {formatarMoeda(resultado.totalArrecadado || 0)}
+                </Text>
+                <Text style={styles.historyStatText}>
+                  Prêmio: {formatarMoeda(resultado.premioLiquido || 0)}
+                </Text>
+                <Text style={styles.historyStatText}>
+                  Ganhadores: {resultado.quantidadeGanhadores || 0}
+                </Text>
+              </View>
+
+              {topRanking.map((item, index) => {
+                const premio = Number(item.premioRecebido ?? item.premio ?? 0);
+
+                return (
+                  <View style={styles.historyPlayerRow} key={`${resultado.jogoId}-${item.email}-${index}`}>
+                    <Text style={styles.historyPosition}>{posicao(index)}</Text>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyPlayerName}>{item.nome}</Text>
+                      <Text style={styles.historyPlayerBet}>
+                        Palpite: {item.placar || "-"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.historyPointsBox}>
+                      <Text style={styles.historyPoints}>{item.pontos || 0}</Text>
+                      <Text style={styles.historyPointsLabel}>pts</Text>
+                      {item.venceu && (
+                        <Text style={styles.historyPrize}>
+                          {formatarMoeda(premio)}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>Pontuação</Text>
 
           <Text style={styles.infoText}>
             Placar exato: 10 pontos. Acertou apenas vencedor ou empate: 3 pontos.
-            Errou tudo: 0 pontos.
+            Errou tudo: 0 pontos. O histórico não é apagado quando o jogo é zerado.
           </Text>
         </View>
 
@@ -514,6 +649,137 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 14,
     fontWeight: "900",
+  },
+
+  historyCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 26,
+    padding: 18,
+    marginBottom: 16,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+
+  historyBadge: {
+    color: "#006B2E",
+    fontSize: 12,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+
+  historyTitle: {
+    color: "#111827",
+    fontSize: 21,
+    fontWeight: "900",
+    lineHeight: 27,
+  },
+
+  historySub: {
+    color: "#4B5563",
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 5,
+  },
+
+  historyDate: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+
+  historyMiniBox: {
+    minWidth: 72,
+    borderRadius: 18,
+    backgroundColor: "#E7FBEF",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: "center",
+  },
+
+  historyMiniNumber: {
+    color: "#006B2E",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
+  historyMiniLabel: {
+    color: "#4B5563",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  historyStats: {
+    backgroundColor: "#F3F6F4",
+    borderRadius: 18,
+    padding: 12,
+    marginTop: 14,
+  },
+
+  historyStatText: {
+    color: "#374151",
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 3,
+  },
+
+  historyPlayerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+
+  historyPosition: {
+    width: 40,
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  historyPlayerName: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  historyPlayerBet: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  historyPointsBox: {
+    alignItems: "center",
+    minWidth: 74,
+  },
+
+  historyPoints: {
+    color: "#006B2E",
+    fontSize: 23,
+    fontWeight: "900",
+  },
+
+  historyPointsLabel: {
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  historyPrize: {
+    color: "#B45309",
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 2,
   },
 
   infoBox: {

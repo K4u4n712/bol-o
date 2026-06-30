@@ -1338,6 +1338,20 @@ export default function AdminScreen() {
         { merge: true }
       );
 
+      // Salva uma cópia permanente do ranking.
+      // Assim, mesmo se o admin zerar o jogo depois, a tela Ranking continua mostrando o histórico.
+      await setDoc(
+        doc(db, "ranking_historico", jogo.id),
+        {
+          ...relatorio,
+          historico: true,
+          origemHistorico: "resultado_processado",
+          processadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
       await setDoc(
         doc(db, "status_apostas", jogo.id),
         {
@@ -1429,13 +1443,32 @@ export default function AdminScreen() {
         batch.delete(doc(db, "notificacoes", documento.id));
       });
 
-      batch.delete(doc(db, "resultados", jogo.id));
+      const resultadoRef = doc(db, "resultados", jogo.id);
+      const resultadoSnapshot = await getDoc(resultadoRef);
+
+      if (resultadoSnapshot.exists()) {
+        batch.set(
+          doc(db, "ranking_historico", jogo.id),
+          {
+            ...resultadoSnapshot.data(),
+            jogoId: jogo.id,
+            jogo: jogo.jogo,
+            historico: true,
+            origemHistorico: "zerar_jogo",
+            preservadoEm: serverTimestamp(),
+            atualizadoEm: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+
+      batch.delete(resultadoRef);
 
       await batch.commit();
 
       mostrarAlerta(
         "Sucesso",
-        "Palpites, notificações e resultado desse jogo foram apagados."
+        "Palpites, notificações e resultado desse jogo foram apagados. O ranking ficou salvo no histórico."
       );
     } catch (error) {
       console.log("Erro ao zerar jogo:", error);
