@@ -9,6 +9,7 @@ import {
   getDoc,
   collection,
   getDocs,
+  onSnapshot,
   serverTimestamp,
   runTransaction,
 } from "firebase/firestore";
@@ -569,10 +570,56 @@ function CardAposta({ jogo }: { jogo: any }) {
 // TELA PRINCIPAL DE APOSTAS
 // ============================================================================
 export default function ApostarScreen() {
+  const { user } = useAuth();
   const { patrocinador, temPatrocinador } = useSponsor();
 
   const [jogosAbertos, setJogosAbertos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saldoUsersConta, setSaldoUsersConta] = useState(0);
+  const [saldoUsuariosConta, setSaldoUsuariosConta] = useState(0);
+
+  const saldoAtual = Math.max(
+    Number(saldoUsersConta || 0),
+    Number(saldoUsuariosConta || 0),
+    Number((user as any)?.saldo || 0)
+  );
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setSaldoUsersConta(0);
+      setSaldoUsuariosConta(0);
+      return;
+    }
+
+    const unsubscribeUsers = onSnapshot(
+      doc(db, "users", user.uid),
+      (snapshot) => {
+        setSaldoUsersConta(
+          snapshot.exists() ? Number(snapshot.data()?.saldo || 0) : 0
+        );
+      },
+      (error) => {
+        console.log("Erro ao carregar saldo em users:", error);
+      }
+    );
+
+    const unsubscribeUsuarios = onSnapshot(
+      doc(db, "usuarios", user.uid),
+      (snapshot) => {
+        setSaldoUsuariosConta(
+          snapshot.exists() ? Number(snapshot.data()?.saldo || 0) : 0
+        );
+      },
+      (error) => {
+        console.log("Erro ao carregar saldo em usuarios:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeUsuarios();
+    };
+  }, [user?.uid]);
 
   useEffect(() => {
     const buscarJogos = async () => {
@@ -674,6 +721,17 @@ export default function ApostarScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  function formatarSaldo(valor: number) {
+    return Number(valor || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function irParaDeposito() {
+    router.push("/perfil");
+  }
+
   function abrirAjuda() {
     mostrarAlerta(
       "Como funciona?",
@@ -715,9 +773,26 @@ export default function ApostarScreen() {
 
         <Text style={styles.headerTitle}>Fazer meu palpite</Text>
 
-        <TouchableOpacity style={styles.helpCircle} onPress={abrirAjuda}>
-          <Text style={styles.helpText}>?</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[styles.saldoPill, temPatrocinador && styles.saldoPillPatrocinado]}
+            onPress={irParaDeposito}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[
+                styles.saldoPillText,
+                temPatrocinador && styles.saldoPillTextPatrocinado,
+              ]}
+            >
+              Saldo: R$ {formatarSaldo(saldoAtual)}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.helpCircle} onPress={abrirAjuda}>
+            <Text style={styles.helpText}>?</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {temPatrocinador && patrocinador && (
@@ -853,8 +928,39 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  saldoPill: {
+    backgroundColor: "#008D38",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.28)",
+    elevation: 4,
+  },
+
+  saldoPillPatrocinado: {
+    backgroundColor: "#D6A941",
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+
+  saldoPillText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  saldoPillTextPatrocinado: {
+    color: "#07120C",
+  },
+
   helpCircle: {
     width: 28,
+    marginLeft: 8,
     height: 28,
     borderRadius: 14,
     borderWidth: 1.5,
