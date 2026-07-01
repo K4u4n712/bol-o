@@ -16,7 +16,16 @@ import {
   ActivityIndicator,
   Image,
 } from "react-native";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { useSponsor } from "../contexts/SponsorContext";
 import { db } from "../services/firebaseConfig";
@@ -156,6 +165,75 @@ export default function LoginScreen() {
     return false;
   }
 
+  function esperar(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function buscarDocsPorEmail(nomeColecao: "users" | "usuarios", emailNormalizado: string) {
+    const ref = collection(db, nomeColecao);
+    const encontrados = new Map<string, any>();
+
+    const consultas = [
+      query(ref, where("emailLower", "==", emailNormalizado)),
+      query(ref, where("email", "==", emailNormalizado)),
+    ];
+
+    for (const consulta of consultas) {
+      const snap = await getDocs(consulta);
+      snap.docs.forEach((documento) => {
+        encontrados.set(documento.id, documento);
+      });
+    }
+
+    return Array.from(encontrados.values());
+  }
+
+  async function marcarCadastroParceria(emailNormalizado: string, nomeNormalizado: string) {
+    if (!temPatrocinador || !patrocinador) return;
+
+    try {
+      const dadosParceria = {
+        nome: nomeNormalizado,
+        email: emailNormalizado,
+        emailLower: emailNormalizado,
+        patrocinadorId: patrocinador.id,
+        patrocinadorNome: patrocinador.nome,
+        parceiroId: patrocinador.id,
+        parceiroNome: patrocinador.nome,
+        origemPatrocinador: patrocinador.id,
+        origem: `qr_${patrocinador.id}`,
+        cadastroViaParceria: true,
+        cadastradoViaParceriaEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      };
+
+      for (let tentativa = 0; tentativa < 2; tentativa++) {
+        const batch = writeBatch(db);
+        let encontrouUsuario = false;
+
+        for (const nomeColecao of ["users", "usuarios"] as const) {
+          const documentos = await buscarDocsPorEmail(nomeColecao, emailNormalizado);
+
+          documentos.forEach((documento) => {
+            encontrouUsuario = true;
+            batch.set(doc(db, nomeColecao, documento.id), dadosParceria, {
+              merge: true,
+            });
+          });
+        }
+
+        if (encontrouUsuario) {
+          await batch.commit();
+          return;
+        }
+
+        await esperar(500);
+      }
+    } catch (error) {
+      console.log("Não foi possível marcar cadastro da parceria:", error);
+    }
+  }
+
   async function entrar() {
     const emailNormalizado = email.trim().toLowerCase();
     const senhaDigitada = senha.trim();
@@ -268,6 +346,7 @@ export default function LoginScreen() {
 
     try {
       await register(nomeNormalizado, emailNormalizado, senhaDigitada);
+      await marcarCadastroParceria(emailNormalizado, nomeNormalizado);
       salvarPreferenciaEmail(emailNormalizado);
       router.replace("/");
     } catch (error: any) {

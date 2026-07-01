@@ -65,6 +65,12 @@ type Aposta = {
   golsCasa: number;
   golsFora: number;
   valor: number;
+  patrocinadorId?: string;
+  patrocinadorNome?: string;
+  parceiroId?: string;
+  parceiroNome?: string;
+  origemPatrocinador?: string;
+  origem?: string;
   criadoEm?: any;
   atualizadoEm?: any;
 };
@@ -86,6 +92,7 @@ type ResultadoProcessado = {
   premioPorVencedor: number;
   ganhadores: any[];
   ranking: any[];
+  resumoPatrocinadores?: any;
   modoProcessamento: string;
   processadoEmTexto: string;
 };
@@ -157,9 +164,13 @@ export default function AdminScreen() {
     {}
   );
 
+  const [apostasTodas, setApostasTodas] = useState<Aposta[]>([]);
+  const [rankingHistorico, setRankingHistorico] = useState<any[]>([]);
+
   const [secoesAbertas, setSecoesAbertas] = useState({
-    jogos: true,
-    saques: true,
+    jogos: false,
+    parcerias: false,
+    saques: false,
     usuarios: false,
   });
 
@@ -191,6 +202,60 @@ export default function AdminScreen() {
   const totalSaquesProcessando = saquesProcessando.reduce((total, saque) => {
     return total + Number(saque.valorSolicitado || 0);
   }, 0);
+
+  const usuariosAura = usuariosComuns.filter((item: any) => itemVeioDaAura(item));
+  const emailsUsuariosAura = new Set(
+    usuariosAura.map((item: any) => normalizarEmail(item.email || item.emailLower || ""))
+  );
+
+  const usuariosAuraOnline = usuariosAura.filter((item: any) => usuarioEstaOnline(item));
+  const usuariosAuraAtivos7Dias = usuariosAura.filter((item: any) => {
+    const ultimaAtividade = pegarMillisPresenca(item);
+    if (!ultimaAtividade) return false;
+    return agoraTick - ultimaAtividade <= 7 * 24 * 60 * 60 * 1000;
+  });
+
+  const apostasAuraAtuais = apostasTodas.filter((item: any) => {
+    const email = normalizarEmail(item.email || item.emailLower || "");
+    return itemVeioDaAura(item) || emailsUsuariosAura.has(email);
+  });
+
+  const rankingAuraHistorico = rankingHistorico.flatMap((resultado: any) => {
+    const ranking = Array.isArray(resultado.ranking) ? resultado.ranking : [];
+    return ranking.filter((item: any) => {
+      const email = normalizarEmail(item.email || item.emailLower || "");
+      return itemVeioDaAura(item) || emailsUsuariosAura.has(email);
+    });
+  });
+
+  const emailsApostadoresAura = new Set(
+    [...apostasAuraAtuais, ...rankingAuraHistorico]
+      .map((item: any) => normalizarEmail(item.email || item.emailLower || ""))
+      .filter(Boolean)
+  );
+
+  const totalPalpitesAura = apostasAuraAtuais.length + rankingAuraHistorico.length;
+  const totalMovimentadoAura = [...apostasAuraAtuais, ...rankingAuraHistorico].reduce(
+    (total, item: any) => total + Number(item.valor || VALOR_APOSTA),
+    0
+  );
+  const taxaAdminAura = totalMovimentadoAura * TAXA_ADMIN;
+
+  const saldoAtualUsuariosAura = usuariosAura.reduce((total: number, item: any) => {
+    return total + pegarSaldoVisual(item);
+  }, 0);
+
+  const saquesAuraPendentes = saques.filter((saque) => {
+    const email = normalizarEmail(saque.email || saque.emailLower || "");
+    return saque.status === "processando" && emailsUsuariosAura.has(email);
+  });
+  const totalSaquesAuraPendentes = saquesAuraPendentes.reduce((total, saque) => {
+    return total + Number(saque.valorSolicitado || 0);
+  }, 0);
+
+  const usuariosAuraRecentes = [...usuariosAura]
+    .sort((a: any, b: any) => pegarDataCadastroParceria(b) - pegarDataCadastroParceria(a))
+    .slice(0, 8);
 
   useEffect(() => {
     carregarUsuarios();
@@ -296,6 +361,63 @@ export default function AdminScreen() {
       },
       (error) => {
         console.log("Erro ao carregar saques:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "apostas"),
+      (snapshot) => {
+        const lista: Aposta[] = snapshot.docs.map((documento) => {
+          const data = documento.data() || {};
+
+          return {
+            id: documento.id,
+            nome: data.nome || "Usuário",
+            email: data.email || "",
+            emailLower: data.emailLower || normalizarEmail(data.email || ""),
+            jogo: data.jogo || "",
+            placar: data.placar || "",
+            golsCasa: Number(data.golsCasa || 0),
+            golsFora: Number(data.golsFora || 0),
+            valor: Number(data.valor || VALOR_APOSTA),
+            patrocinadorId: data.patrocinadorId || "",
+            patrocinadorNome: data.patrocinadorNome || "",
+            parceiroId: data.parceiroId || "",
+            parceiroNome: data.parceiroNome || "",
+            origemPatrocinador: data.origemPatrocinador || "",
+            origem: data.origem || "",
+            criadoEm: data.criadoEm,
+            atualizadoEm: data.atualizadoEm,
+          };
+        });
+
+        setApostasTodas(lista);
+      },
+      (error) => {
+        console.log("Erro ao carregar apostas gerais:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "ranking_historico"),
+      (snapshot) => {
+        const lista = snapshot.docs.map((documento) => ({
+          id: documento.id,
+          ...documento.data(),
+        }));
+
+        setRankingHistorico(lista);
+      },
+      (error) => {
+        console.log("Erro ao carregar ranking histórico:", error);
       }
     );
 
@@ -468,6 +590,12 @@ export default function AdminScreen() {
               golsCasa: Number(data.golsCasa || 0),
               golsFora: Number(data.golsFora || 0),
               valor: Number(data.valor || VALOR_APOSTA),
+              patrocinadorId: data.patrocinadorId || "",
+              patrocinadorNome: data.patrocinadorNome || "",
+              parceiroId: data.parceiroId || "",
+              parceiroNome: data.parceiroNome || "",
+              origemPatrocinador: data.origemPatrocinador || "",
+              origem: data.origem || "",
               criadoEm: data.criadoEm,
               atualizadoEm: data.atualizadoEm,
             };
@@ -553,7 +681,7 @@ export default function AdminScreen() {
     );
   }
 
-  function alternarSecao(secao: "jogos" | "saques" | "usuarios") {
+  function alternarSecao(secao: "jogos" | "parcerias" | "saques" | "usuarios") {
     setSecoesAbertas((prev) => ({
       ...prev,
       [secao]: !prev[secao],
@@ -667,6 +795,47 @@ export default function AdminScreen() {
 
   function normalizarEmail(email: string) {
     return String(email || "").trim().toLowerCase();
+  }
+
+  function normalizarCampo(valor: any) {
+    return String(valor || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+  }
+
+  function pegarCodigoPatrocinador(item: any) {
+    const campos = [
+      item?.patrocinadorId,
+      item?.parceiroId,
+      item?.origemPatrocinador,
+      item?.codigoPatrocinador,
+      item?.patrocinadorNome,
+      item?.parceiroNome,
+      item?.origem,
+      item?.utm_source,
+      item?.cadastroOrigem,
+    ].map(normalizarCampo);
+
+    if (campos.some((campo) => campo.includes("aura"))) {
+      return "aura";
+    }
+
+    return "";
+  }
+
+  function itemVeioDaAura(item: any) {
+    return pegarCodigoPatrocinador(item) === "aura";
+  }
+
+  function pegarDataCadastroParceria(item: any) {
+    return pegarMillis(
+      item.cadastradoViaParceriaEm ||
+        item.cadastradoViaPatrocinadorEm ||
+        item.criadoEm ||
+        item.atualizadoEm
+    );
   }
 
   function pegarSaldoVisual(item: any) {
@@ -1165,6 +1334,12 @@ export default function AdminScreen() {
           golsCasa: Number(data.golsCasa || 0),
           golsFora: Number(data.golsFora || 0),
           valor: Number(data.valor || VALOR_APOSTA),
+          patrocinadorId: data.patrocinadorId || "",
+          patrocinadorNome: data.patrocinadorNome || "",
+          parceiroId: data.parceiroId || "",
+          parceiroNome: data.parceiroNome || "",
+          origemPatrocinador: data.origemPatrocinador || "",
+          origem: data.origem || "",
           criadoEm: data.criadoEm,
           atualizadoEm: data.atualizadoEm,
         };
@@ -1185,6 +1360,28 @@ export default function AdminScreen() {
         vencedoresExatos.length > 0
           ? premioLiquidoFinal / vencedoresExatos.length
           : 0;
+
+      const resumoPatrocinadores = apostas.reduce((acc: any, aposta: any) => {
+        const codigo = pegarCodigoPatrocinador(aposta) || "organico";
+        const nomePatrocinador =
+          aposta.patrocinadorNome ||
+          aposta.parceiroNome ||
+          (codigo === "aura" ? "Aura Lounge" : "Orgânico");
+
+        if (!acc[codigo]) {
+          acc[codigo] = {
+            codigo,
+            nome: nomePatrocinador,
+            totalPalpites: 0,
+            totalArrecadado: 0,
+          };
+        }
+
+        acc[codigo].totalPalpites += 1;
+        acc[codigo].totalArrecadado += Number(aposta.valor || VALOR_APOSTA);
+
+        return acc;
+      }, {});
 
       const rankingBase = apostas.map((aposta) => {
         const acertouPlacar =
@@ -1209,6 +1406,13 @@ export default function AdminScreen() {
           placar: aposta.placar,
           golsCasa: aposta.golsCasa,
           golsFora: aposta.golsFora,
+          valor: aposta.valor,
+          patrocinadorId: aposta.patrocinadorId || "",
+          patrocinadorNome: aposta.patrocinadorNome || "",
+          parceiroId: aposta.parceiroId || "",
+          parceiroNome: aposta.parceiroNome || "",
+          origemPatrocinador: aposta.origemPatrocinador || "",
+          origem: aposta.origem || "",
           acertouPlacar,
           acertouVencedor,
           pontos,
@@ -1324,6 +1528,7 @@ export default function AdminScreen() {
         premioPorVencedor,
         ganhadores: ganhadoresDetalhados,
         ranking: rankingCompleto,
+        resumoPatrocinadores,
         modoProcessamento: automatico ? "automático" : "manual",
         processadoEmTexto: new Date().toLocaleString("pt-BR"),
       };
@@ -1687,7 +1892,7 @@ export default function AdminScreen() {
   }
 
   function renderCabecalhoSecao(
-    secao: "jogos" | "saques" | "usuarios",
+    secao: "jogos" | "parcerias" | "saques" | "usuarios",
     icone: string,
     titulo: string,
     subtitulo: string
@@ -1786,6 +1991,124 @@ export default function AdminScreen() {
             <Text style={styles.statLabel}>BRL em saque</Text>
           </View>
         </View>
+
+        {renderCabecalhoSecao(
+          "parcerias",
+          "🤝",
+          "Parcerias",
+          `${usuariosAura.length} cadastro(s) via Aura Lounge`
+        )}
+
+        {secoesAbertas.parcerias && (
+          <View style={styles.sectionContent}>
+            <View style={styles.partnerCard}>
+              <View style={styles.partnerHeaderRow}>
+                <View style={styles.partnerLogoCircle}>
+                  <Text style={styles.partnerLogoText}>AL</Text>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.partnerLabel}>PARCERIA ATIVA</Text>
+                  <Text style={styles.partnerName}>Aura Lounge</Text>
+                  <Text style={styles.partnerSub}>Controle simples para você acompanhar e apresentar ao parceiro.</Text>
+                </View>
+              </View>
+
+              <View style={styles.partnerLinkBox}>
+                <Text style={styles.partnerLinkLabel}>Link oficial do QR Code</Text>
+                <Text style={styles.partnerLinkText}>https://bolao10-web.vercel.app/?patrocinador=aura</Text>
+              </View>
+
+              <View style={styles.partnerMetricsGrid}>
+                <View style={styles.partnerMetricCard}>
+                  <Text style={styles.partnerMetricNumber}>{usuariosAura.length}</Text>
+                  <Text style={styles.partnerMetricLabel}>cadastros pela Aura</Text>
+                </View>
+
+                <View style={styles.partnerMetricCard}>
+                  <Text style={styles.partnerMetricNumber}>{usuariosAuraOnline.length}</Text>
+                  <Text style={styles.partnerMetricLabel}>online agora</Text>
+                </View>
+
+                <View style={styles.partnerMetricCard}>
+                  <Text style={styles.partnerMetricNumber}>{usuariosAuraAtivos7Dias.length}</Text>
+                  <Text style={styles.partnerMetricLabel}>ativos em 7 dias</Text>
+                </View>
+
+                <View style={styles.partnerMetricCard}>
+                  <Text style={styles.partnerMetricNumber}>{emailsApostadoresAura.size}</Text>
+                  <Text style={styles.partnerMetricLabel}>usuários que apostaram</Text>
+                </View>
+              </View>
+
+              <View style={styles.partnerFinanceBox}>
+                <Text style={styles.partnerFinanceTitle}>Resumo financeiro da Aura</Text>
+
+                <View style={styles.partnerFinanceRow}>
+                  <Text style={styles.partnerFinanceLabel}>Palpites vinculados</Text>
+                  <Text style={styles.partnerFinanceValue}>{totalPalpitesAura}</Text>
+                </View>
+
+                <View style={styles.partnerFinanceRow}>
+                  <Text style={styles.partnerFinanceLabel}>Valor movimentado</Text>
+                  <Text style={styles.partnerFinanceValue}>{formatarMoeda(totalMovimentadoAura)}</Text>
+                </View>
+
+                <View style={styles.partnerFinanceRow}>
+                  <Text style={styles.partnerFinanceLabel}>Taxa admin estimada</Text>
+                  <Text style={styles.partnerFinanceValue}>{formatarMoeda(taxaAdminAura)}</Text>
+                </View>
+
+                <View style={styles.partnerFinanceRow}>
+                  <Text style={styles.partnerFinanceLabel}>Saldo atual dos usuários Aura</Text>
+                  <Text style={styles.partnerFinanceValue}>{formatarMoeda(saldoAtualUsuariosAura)}</Text>
+                </View>
+
+                <View style={styles.partnerFinanceRow}>
+                  <Text style={styles.partnerFinanceLabel}>Saques pendentes Aura</Text>
+                  <Text style={styles.partnerFinanceValue}>{saquesAuraPendentes.length} • {formatarMoeda(totalSaquesAuraPendentes)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.partnerListTitle}>Últimos usuários da Aura</Text>
+
+              {usuariosAuraRecentes.length === 0 && (
+                <View style={styles.noWinnerBox}>
+                  <Text style={styles.noWinnerText}>
+                    Nenhum cadastro marcado como Aura ainda. Os próximos cadastros pelo link da Aura serão registrados aqui.
+                  </Text>
+                </View>
+              )}
+
+              {usuariosAuraRecentes.map((item: any) => {
+                const onlineAgora = usuarioEstaOnline(item);
+
+                return (
+                  <View style={styles.partnerUserMiniCard} key={`aura-${item.email}`}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.partnerUserName}>{item.nome || "Usuário"}</Text>
+                      <Text style={styles.partnerUserEmail}>{item.email}</Text>
+                      <Text style={styles.partnerUserMeta}>{textoPresencaUsuario(item)}</Text>
+                    </View>
+
+                    <View style={[styles.partnerUserStatus, onlineAgora && styles.partnerUserStatusOnline]}>
+                      <Text style={[styles.partnerUserStatusText, onlineAgora && styles.partnerUserStatusTextOnline]}>
+                        {onlineAgora ? "ONLINE" : "OFFLINE"}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+
+              <View style={styles.warningCard}>
+                <Text style={styles.warningTitle}>Importante</Text>
+                <Text style={styles.warningText}>
+                  Os usuários antigos só aparecem aqui se já tiverem sido marcados com origem Aura. A partir desta versão, novos cadastros pelo link da Aura entram automaticamente neste controle.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {renderCabecalhoSecao(
           "jogos",
@@ -2979,6 +3302,213 @@ const styles = StyleSheet.create({
     color: "#DC2626",
     fontSize: 13,
     fontWeight: "900",
+  },
+
+  partnerCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 14,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  partnerHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  partnerLogoCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#050A07",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#D6A941",
+  },
+
+  partnerLogoText: {
+    color: "#D6A941",
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  partnerLabel: {
+    color: "#D6A941",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  partnerName: {
+    color: "#111827",
+    fontSize: 24,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+
+  partnerSub: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
+    lineHeight: 19,
+  },
+
+  partnerLinkBox: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 14,
+  },
+
+  partnerLinkLabel: {
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+
+  partnerLinkText: {
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+
+  partnerMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  partnerMetricCard: {
+    width: "48%",
+    backgroundColor: "#F3F6F4",
+    borderRadius: 18,
+    padding: 14,
+    minHeight: 94,
+    justifyContent: "center",
+  },
+
+  partnerMetricNumber: {
+    color: "#006B2E",
+    fontSize: 30,
+    fontWeight: "900",
+  },
+
+  partnerMetricLabel: {
+    color: "#4B5563",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
+    lineHeight: 16,
+  },
+
+  partnerFinanceBox: {
+    backgroundColor: "#111827",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+  },
+
+  partnerFinanceTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+
+  partnerFinanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+  },
+
+  partnerFinanceLabel: {
+    flex: 1,
+    color: "#D1D5DB",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  partnerFinanceValue: {
+    color: "#D6A941",
+    fontSize: 14,
+    fontWeight: "900",
+    textAlign: "right",
+  },
+
+  partnerListTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+
+  partnerUserMiniCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 13,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  partnerUserName: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  partnerUserEmail: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  partnerUserMeta: {
+    color: "#4B5563",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+
+  partnerUserStatus: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+
+  partnerUserStatusOnline: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  partnerUserStatusText: {
+    color: "#6B7280",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  partnerUserStatusTextOnline: {
+    color: "#166534",
   },
 
   emptyCard: {
