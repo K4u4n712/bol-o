@@ -16,6 +16,7 @@ import {
   Dimensions,
   Platform,
   useWindowDimensions,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -568,6 +569,19 @@ export default function BolaoScreen() {
         <View style={[styles.heroCard, temPatrocinador && styles.heroCardPatrocinado]}>
           {temPatrocinador && patrocinador && (
             <View style={styles.sponsorHeroPill}>
+              <View style={styles.sponsorHeroPillLogo}>
+                {patrocinador.logoUri ? (
+                  <Image
+                    source={{ uri: patrocinador.logoUri }}
+                    style={styles.sponsorHeroPillLogoImage}
+                  />
+                ) : (
+                  <Text style={styles.sponsorHeroPillLogoText}>
+                    {patrocinador.logoIniciais || "AL"}
+                  </Text>
+                )}
+              </View>
+
               <Text style={styles.sponsorHeroPillText}>
                 Oferecimento {patrocinador.nome}
               </Text>
@@ -658,11 +672,24 @@ export default function BolaoScreen() {
 
       {temPatrocinador && patrocinador && (
         <View style={styles.sponsorBolaoTop}>
-          <Text style={styles.sponsorBolaoSmall}>OFERECIMENTO</Text>
-          <Text style={styles.sponsorBolaoName}>{patrocinador.nome}</Text>
-          <Text style={styles.sponsorBolaoText}>
-            Experiência premium no Bolão10.
-          </Text>
+          <View style={styles.sponsorBolaoLogo}>
+            {patrocinador.logoUri ? (
+              <Image
+                source={{ uri: patrocinador.logoUri }}
+                style={styles.sponsorBolaoLogoImage}
+              />
+            ) : (
+              <Text style={styles.sponsorBolaoLogoText}>
+                {patrocinador.logoIniciais || "AL"}
+              </Text>
+            )}
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sponsorBolaoSmall}>OFERECIMENTO</Text>
+            <Text style={styles.sponsorBolaoName}>{patrocinador.nome}</Text>
+            <Text style={styles.sponsorBolaoText}>Bolão10 em parceria oficial.</Text>
+          </View>
         </View>
       )}
 
@@ -1295,15 +1322,43 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "rgba(205, 162, 78, 0.45)",
-    borderRadius: 18,
+    borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
     marginHorizontal: 20,
     marginTop: 14,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sponsorBolaoLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "rgba(205, 162, 78, 0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    overflow: "hidden",
+  },
+
+  sponsorBolaoLogoImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+  },
+
+  sponsorBolaoLogoText: {
+    color: "#E8C878",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
 
   sponsorBolaoSmall: {
@@ -1337,12 +1392,37 @@ const styles = StyleSheet.create({
   sponsorHeroPill: {
     alignSelf: "flex-start",
     backgroundColor: "rgba(205, 162, 78, 0.12)",
-    borderRadius: 16,
-    paddingHorizontal: 12,
+    borderRadius: 18,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: "rgba(205, 162, 78, 0.45)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sponsorHeroPillLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#050A07",
+    overflow: "hidden",
+    marginRight: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sponsorHeroPillLogoImage: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+
+  sponsorHeroPillLogoText: {
+    color: "#E8C878",
+    fontSize: 9,
+    fontWeight: "900",
   },
 
   sponsorHeroPillText: {

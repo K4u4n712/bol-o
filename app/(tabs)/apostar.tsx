@@ -361,6 +361,19 @@ function CardAposta({ jogo }: { jogo: any }) {
     <View style={[styles.cardContainer, temPatrocinador && styles.cardContainerPatrocinado]}>
       {temPatrocinador && patrocinador && (
         <View style={styles.cardSponsorMini}>
+          <View style={styles.cardSponsorMiniLogo}>
+            {patrocinador.logoUri ? (
+              <Image
+                source={{ uri: patrocinador.logoUri }}
+                style={styles.cardSponsorMiniLogoImage}
+              />
+            ) : (
+              <Text style={styles.cardSponsorMiniLogoText}>
+                {patrocinador.logoIniciais || "AL"}
+              </Text>
+            )}
+          </View>
+
           <Text style={styles.cardSponsorMiniText}>
             Oferecimento {patrocinador.nome}
           </Text>
@@ -709,11 +722,24 @@ export default function ApostarScreen() {
 
       {temPatrocinador && patrocinador && (
         <View style={styles.sponsorTopCard}>
-          <Text style={styles.sponsorTopSmall}>OFERECIMENTO</Text>
-          <Text style={styles.sponsorTopName}>{patrocinador.nome}</Text>
-          <Text style={styles.sponsorTopText}>
-            Experiência premium no Bolão10.
-          </Text>
+          <View style={styles.sponsorTopLogo}>
+            {patrocinador.logoUri ? (
+              <Image
+                source={{ uri: patrocinador.logoUri }}
+                style={styles.sponsorTopLogoImage}
+              />
+            ) : (
+              <Text style={styles.sponsorTopLogoText}>
+                {patrocinador.logoIniciais || "AL"}
+              </Text>
+            )}
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sponsorTopSmall}>OFERECIMENTO</Text>
+            <Text style={styles.sponsorTopName}>{patrocinador.nome}</Text>
+            <Text style={styles.sponsorTopText}>Bolão10 em parceria oficial.</Text>
+          </View>
         </View>
       )}
 
@@ -1197,17 +1223,45 @@ const styles = StyleSheet.create({
 
   sponsorTopCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: "rgba(205, 162, 78, 0.45)",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
     marginHorizontal: 20,
     marginTop: 14,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  sponsorTopLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "rgba(205, 162, 78, 0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    overflow: "hidden",
+  },
+
+  sponsorTopLogoImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+  },
+
+  sponsorTopLogoText: {
+    color: "#E8C878",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
 
   sponsorTopSmall: {
@@ -1240,12 +1294,37 @@ const styles = StyleSheet.create({
   cardSponsorMini: {
     alignSelf: "center",
     backgroundColor: "#F7F3EA",
-    borderRadius: 16,
-    paddingHorizontal: 12,
+    borderRadius: 18,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "rgba(205, 162, 78, 0.45)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  cardSponsorMiniLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#050A07",
+    overflow: "hidden",
+    marginRight: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cardSponsorMiniLogoImage: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+
+  cardSponsorMiniLogoText: {
+    color: "#E8C878",
+    fontSize: 9,
+    fontWeight: "900",
   },
 
   cardSponsorMiniText: {

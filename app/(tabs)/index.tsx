@@ -427,13 +427,22 @@ export default function HomeScreen() {
           {temPatrocinador && patrocinador && (
             <View style={styles.sponsorHomeBanner}>
               <View style={styles.sponsorHomeLogo}>
-                <Text style={styles.sponsorHomeLogoText}>AL</Text>
+                {patrocinador.logoUri ? (
+                  <Image
+                    source={{ uri: patrocinador.logoUri }}
+                    style={styles.sponsorHomeLogoImage}
+                  />
+                ) : (
+                  <Text style={styles.sponsorHomeLogoText}>
+                    {patrocinador.logoIniciais || "AL"}
+                  </Text>
+                )}
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.sponsorHomeSmall}>OFERECIMENTO</Text>
                 <Text style={styles.sponsorHomeName}>{patrocinador.nome}</Text>
-                <Text style={styles.sponsorHomeLine}>Experiência premium no Bolão10</Text>
+                <Text style={styles.sponsorHomeLine}>Bolão10 em parceria oficial</Text>
               </View>
             </View>
           )}
@@ -1116,15 +1125,22 @@ const styles = StyleSheet.create({
   },
 
   sponsorHomeLogo: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "rgba(205, 162, 78, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(205, 162, 78, 0.75)",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "rgba(205, 162, 78, 0.85)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+    overflow: "hidden",
+  },
+
+  sponsorHomeLogoImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
 
   sponsorHomeLogoText: {

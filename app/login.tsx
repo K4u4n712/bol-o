@@ -14,6 +14,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
@@ -341,13 +342,22 @@ export default function LoginScreen() {
           {temPatrocinador && patrocinador && (
             <View style={styles.sponsorWelcomeCard}>
               <View style={styles.sponsorLogoCircle}>
-                <Text style={styles.sponsorLogoText}>AL</Text>
+                {patrocinador.logoUri ? (
+                  <Image
+                    source={{ uri: patrocinador.logoUri }}
+                    style={styles.sponsorLogoImage}
+                  />
+                ) : (
+                  <Text style={styles.sponsorLogoText}>
+                    {patrocinador.logoIniciais || "AL"}
+                  </Text>
+                )}
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.sponsorSmall}>OFERECIMENTO</Text>
                 <Text style={styles.sponsorName}>{patrocinador.nome}</Text>
-                <Text style={styles.sponsorDesc}>{patrocinador.descricao}</Text>
+                <Text style={styles.sponsorDesc}>Bolão10 em parceria oficial.</Text>
               </View>
             </View>
           )}
@@ -923,7 +933,7 @@ const styles = StyleSheet.create({
 
   sponsorWelcomeCard: {
     backgroundColor: "#07110C",
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: "rgba(205, 162, 78, 0.6)",
     paddingHorizontal: 16,
@@ -938,15 +948,22 @@ const styles = StyleSheet.create({
   },
 
   sponsorLogoCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "rgba(205, 162, 78, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(205, 162, 78, 0.75)",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#050A07",
+    borderWidth: 1.5,
+    borderColor: "rgba(205, 162, 78, 0.85)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+    overflow: "hidden",
+  },
+
+  sponsorLogoImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
 
   sponsorLogoText: {
