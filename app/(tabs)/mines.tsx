@@ -511,7 +511,7 @@ export default function CassinoScreen() {
       });
       setEmJogo(false);
       setGanhoAtual(0);
-      setMensagem(`💣 Mina! Você perdeu ${formatarSaldo(apostaDaRodada)} saldo fictício.`);
+      setMensagem(`💣 Mina! Você perdeu ${formatarSaldo(apostaDaRodada)} saldo.`);
       await registrarHistorico("perdeu", 0, -apostaDaRodada, "controle_interno_banca");
       return;
     }
@@ -527,7 +527,7 @@ export default function CassinoScreen() {
       });
       setEmJogo(false);
       setGanhoAtual(0);
-      setMensagem(`💣 Mina! Você perdeu ${formatarSaldo(apostaDaRodada)} saldo fictício.`);
+      setMensagem(`💣 Mina! Você perdeu ${formatarSaldo(apostaDaRodada)} saldo`);
       await registrarHistorico("perdeu", 0, -apostaDaRodada, "mina_probabilidade");
       return;
     }
