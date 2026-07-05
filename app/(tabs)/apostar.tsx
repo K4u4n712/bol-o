@@ -27,6 +27,107 @@ import {
 
 const VALOR_APOSTA = 10;
 
+const NOMES_TIMES_PT: Record<string, string> = {
+  BRA: "Brasil",
+  NOR: "Noruega",
+  ARG: "Argentina",
+  JPN: "Japão",
+  CRO: "Croácia",
+  GHA: "Gana",
+  POR: "Portugal",
+  ESP: "Espanha",
+  FRA: "França",
+  GER: "Alemanha",
+  ITA: "Itália",
+  ENG: "Inglaterra",
+  WAL: "País de Gales",
+  SCO: "Escócia",
+  NIR: "Irlanda do Norte",
+  USA: "Estados Unidos",
+  MEX: "México",
+  CAN: "Canadá",
+  URU: "Uruguai",
+  COL: "Colômbia",
+  CHI: "Chile",
+  PER: "Peru",
+  ECU: "Equador",
+  BOL: "Bolívia",
+  PAR: "Paraguai",
+  VEN: "Venezuela",
+  NED: "Holanda",
+  BEL: "Bélgica",
+  SUI: "Suíça",
+  DEN: "Dinamarca",
+  SWE: "Suécia",
+  POL: "Polônia",
+  TUR: "Turquia",
+  UKR: "Ucrânia",
+  RUS: "Rússia",
+  MAR: "Marrocos",
+  SEN: "Senegal",
+  NGR: "Nigéria",
+  NGA: "Nigéria",
+  CIV: "Costa do Marfim",
+  EGY: "Egito",
+  RSA: "África do Sul",
+  KOR: "Coreia do Sul",
+  PRK: "Coreia do Norte",
+  CHN: "China",
+  AUS: "Austrália",
+  NZL: "Nova Zelândia",
+  SAU: "Arábia Saudita",
+  IRN: "Irã",
+  IRQ: "Iraque",
+  QAT: "Catar",
+  UAE: "Emirados Árabes",
+  ARE: "Emirados Árabes",
+  CRC: "Costa Rica",
+  PAN: "Panamá",
+  HON: "Honduras",
+  JAM: "Jamaica",
+  SRB: "Sérvia",
+  BIH: "Bósnia e Herzegovina",
+  CMR: "Camarões",
+  TUN: "Tunísia",
+  ALG: "Argélia",
+  GRE: "Grécia",
+  GRC: "Grécia",
+  CZE: "Tchéquia",
+  AUT: "Áustria",
+  HUN: "Hungria",
+  ROU: "Romênia",
+  SVK: "Eslováquia",
+  SVN: "Eslovênia",
+  FIN: "Finlândia",
+  IRL: "Irlanda",
+  ISL: "Islândia",
+  ALB: "Albânia",
+  MKD: "Macedônia do Norte",
+  GEO: "Geórgia",
+  ISR: "Israel",
+  JOR: "Jordânia",
+  SYR: "Síria",
+  OMA: "Omã",
+  BHR: "Bahrein",
+  KUW: "Kuwait",
+  UZB: "Uzbequistão",
+  THA: "Tailândia",
+  VIE: "Vietnã",
+  VNM: "Vietnã",
+  IDN: "Indonésia",
+  MAS: "Malásia",
+  MYS: "Malásia",
+  CPV: "Cabo Verde",
+  COD: "RD Congo",
+  DZA: "Argélia",
+};
+
+function traduzirNomeTime(sigla?: string, nomeOriginal?: string) {
+  const codigo = String(sigla || "").toUpperCase();
+  return NOMES_TIMES_PT[codigo] || nomeOriginal || codigo || "Time";
+}
+
+
 // ============================================================================
 // COMPONENTE INTERNO: CARD DE APOSTA
 // ============================================================================
@@ -228,11 +329,42 @@ function CardAposta({ jogo }: { jogo: any }) {
           }
         }
 
+        const userAny = user as any;
+
+        const patrocinadorIdAposta =
+          patrocinador?.id ||
+          userAny?.patrocinadorId ||
+          userAny?.parceiroId ||
+          userAny?.codigoPatrocinador ||
+          "";
+
+        const patrocinadorNomeAposta =
+          patrocinador?.nome ||
+          userAny?.patrocinadorNome ||
+          userAny?.parceiroNome ||
+          (String(patrocinadorIdAposta).toLowerCase().includes("aura")
+            ? "Aura Lounge"
+            : "");
+
+        const origemAposta =
+          patrocinador
+            ? `qr_${patrocinador.id}`
+            : userAny?.origem ||
+              userAny?.cadastroOrigem ||
+              userAny?.origemPatrocinador ||
+              userAny?.utm_source ||
+              (patrocinadorIdAposta ? `cadastro_${patrocinadorIdAposta}` : "organico");
+
         const dadosAposta: any = {
           userId: uid,
-          patrocinadorId: patrocinador?.id || "",
-          patrocinadorNome: patrocinador?.nome || "",
-          origem: patrocinador ? `qr_${patrocinador.id}` : "organico",
+          patrocinadorId: patrocinadorIdAposta,
+          patrocinadorNome: patrocinadorNomeAposta,
+          parceiroId: userAny?.parceiroId || patrocinadorIdAposta,
+          parceiroNome: userAny?.parceiroNome || patrocinadorNomeAposta,
+          origemPatrocinador: userAny?.origemPatrocinador || origemAposta,
+          codigoPatrocinador: userAny?.codigoPatrocinador || patrocinadorIdAposta,
+          cadastroOrigem: userAny?.cadastroOrigem || origemAposta,
+          origem: origemAposta,
           nome: nomeUsuario,
           email: emailUsuario,
           emailLower: emailUsuario.toLowerCase(),
@@ -687,13 +819,13 @@ export default function ApostarScreen() {
                 }),
                 startMillis: dataJogo.getTime(),
                 timeCasa: {
-                  nome: timeCasa.team.displayName,
+                  nome: traduzirNomeTime(timeCasa.team.abbreviation, timeCasa.team.displayName),
                   sigla: timeCasa.team.abbreviation,
                   bandeira:
                     timeCasa.team.logo || "https://via.placeholder.com/50",
                 },
                 timeFora: {
-                  nome: timeFora.team.displayName,
+                  nome: traduzirNomeTime(timeFora.team.abbreviation, timeFora.team.displayName),
                   sigla: timeFora.team.abbreviation,
                   bandeira:
                     timeFora.team.logo || "https://via.placeholder.com/50",
@@ -878,6 +1010,14 @@ export default function ApostarScreen() {
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/cassino")}
+        >
+          <Text style={styles.menuIcon}>🎰</Text>
+          <Text style={styles.menuText}>Cassino</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1277,14 +1417,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 74,
+    height: 78,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
 
   menuItem: {
@@ -1300,20 +1440,20 @@ const styles = StyleSheet.create({
   },
 
   menuIcon: {
-    fontSize: 20,
+    fontSize: 22,
   },
 
   menuText: {
-    fontSize: 10,
+    fontSize: 11,
     color: "#6B7280",
-    marginTop: 2,
+    marginTop: 3,
     fontWeight: "700",
   },
 
   menuTextActive: {
-    fontSize: 10,
+    fontSize: 11,
     color: "#00A344",
-    marginTop: 2,
+    marginTop: 3,
     fontWeight: "900",
   },
 

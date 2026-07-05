@@ -20,6 +20,8 @@ import {
   getDocs,
   onSnapshot,
   query,
+  orderBy,
+  limit,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -30,6 +32,7 @@ import {
 const VALOR_APOSTA = 10;
 const TAXA_ADMIN = 0.2;
 const LIMITE_ONLINE_MS = 2 * 60 * 1000;
+const PERCENTUAL_RESERVA_MINES = 0.25;
 
 type JogoMonitorado = {
   id: string;
@@ -117,6 +120,21 @@ type SaqueSolicitado = {
   canceladoPor?: string;
 };
 
+type CassinoHistoricoItem = {
+  id: string;
+  uid?: string;
+  nome?: string;
+  email?: string;
+  jogo?: string;
+  resultado?: "sacou" | "perdeu" | string;
+  aposta?: number;
+  pagamento?: number;
+  ganhoLiquido?: number;
+  casasSeguras?: number;
+  motivo?: string;
+  criadoEm?: any;
+};
+
 export default function AdminScreen() {
   const {
     user,
@@ -167,9 +185,40 @@ export default function AdminScreen() {
   const [apostasTodas, setApostasTodas] = useState<Aposta[]>([]);
   const [rankingHistorico, setRankingHistorico] = useState<any[]>([]);
 
+  const [saldosFicticiosEditados, setSaldosFicticiosEditados] = useState<Record<string, string>>(
+    {}
+  );
+  const [saldosFicticiosUsers, setSaldosFicticiosUsers] = useState<any>({
+    porEmail: {},
+    porUid: {},
+  });
+  const [saldosFicticiosUsuarios, setSaldosFicticiosUsuarios] = useState<any>({
+    porEmail: {},
+    porUid: {},
+  });
+  const [cassinoConfig, setCassinoConfig] = useState<any>({
+    ativo: true,
+    bancaFicticia: 0,
+    apostaMinima: 1,
+    apostaMaxima: 100,
+    multiplicadorMaximo: 23.33,
+    percentualReservaBanca: PERCENTUAL_RESERVA_MINES,
+    modo: "simulacao_controlada",
+  });
+  const [cassinoHistorico, setCassinoHistorico] = useState<CassinoHistoricoItem[]>([]);
+  const [bancaFicticiaEditada, setBancaFicticiaEditada] = useState("");
+  const [configMinesEditada, setConfigMinesEditada] = useState({
+    apostaMinima: "1",
+    apostaMaxima: "100",
+    multiplicadorMaximo: "23.33",
+    percentualReservaBanca: "25",
+  });
+  const [processandoCassino, setProcessandoCassino] = useState(false);
+
   const [secoesAbertas, setSecoesAbertas] = useState({
     jogos: false,
     parcerias: false,
+    cassino: false,
     saques: false,
     usuarios: false,
   });
@@ -257,8 +306,141 @@ export default function AdminScreen() {
     .sort((a: any, b: any) => pegarDataCadastroParceria(b) - pegarDataCadastroParceria(a))
     .slice(0, 8);
 
+  const bancaFicticiaAtual = Number(cassinoConfig?.bancaFicticia || 0);
+  const totalApostadoMines = cassinoHistorico.reduce((total, item) => {
+    return total + Number(item.aposta || 0);
+  }, 0);
+  const totalPagoMines = cassinoHistorico.reduce((total, item) => {
+    return total + Number(item.pagamento || 0);
+  }, 0);
+  const lucroHistoricoMines = totalApostadoMines - totalPagoMines;
+  const rodadasMines = cassinoHistorico.length;
+  const minesAtivo = cassinoConfig?.ativo !== false;
+  const apostaMinimaMines = Number(cassinoConfig?.apostaMinima ?? 1);
+  const apostaMaximaMines = Number(cassinoConfig?.apostaMaxima ?? 100);
+  const multiplicadorMaximoMines = Number(cassinoConfig?.multiplicadorMaximo ?? 23.33);
+  const percentualReservaMines = Number(
+    cassinoConfig?.percentualReservaBanca ?? PERCENTUAL_RESERVA_MINES
+  );
+  const saldoLiberadoMines = Math.max(0, bancaFicticiaAtual * (1 - percentualReservaMines));
+  const usuariosComSaldoFicticio = usuariosComuns.filter((item: any) => {
+    return pegarSaldoFicticioVisual(item) > 0;
+  });
+  const totalSaldoFicticioUsuarios = usuariosComuns.reduce((total: number, item: any) => {
+    return total + pegarSaldoFicticioVisual(item);
+  }, 0);
+
   useEffect(() => {
     carregarUsuarios();
+  }, []);
+
+  useEffect(() => {
+    function montarMapaSaldosFicticios(snapshot: any) {
+      const porEmail: Record<string, number> = {};
+      const porUid: Record<string, number> = {};
+
+      snapshot.docs.forEach((documento: any) => {
+        const data = documento.data() || {};
+        const emailLower = normalizarEmail(data.email || data.emailLower || "");
+        const uid = String(data.uid || documento.id || "");
+        const saldoFicticio = Number(data.saldoFicticio || 0);
+
+        if (emailLower) {
+          porEmail[emailLower] = saldoFicticio;
+        }
+
+        if (uid) {
+          porUid[uid] = saldoFicticio;
+        }
+      });
+
+      return {
+        porEmail,
+        porUid,
+      };
+    }
+
+    const unsubscribeUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        setSaldosFicticiosUsers(montarMapaSaldosFicticios(snapshot));
+      },
+      (error) => {
+        console.log("Erro ao escutar saldos fictícios em users:", error);
+      }
+    );
+
+    const unsubscribeUsuarios = onSnapshot(
+      collection(db, "usuarios"),
+      (snapshot) => {
+        setSaldosFicticiosUsuarios(montarMapaSaldosFicticios(snapshot));
+      },
+      (error) => {
+        console.log("Erro ao escutar saldos fictícios em usuarios:", error);
+      }
+    );
+
+    const unsubscribeConfig = onSnapshot(
+      doc(db, "cassino_config", "mines10"),
+      (snapshot) => {
+        const data = snapshot.data() || {};
+
+        const configAtualizada = {
+          ativo: data.ativo !== false,
+          bancaFicticia: Number(data.bancaFicticia || 0),
+          apostaMinima: Number(data.apostaMinima ?? 1),
+          apostaMaxima: Number(data.apostaMaxima ?? 100),
+          multiplicadorMaximo: Number(data.multiplicadorMaximo ?? 23.33),
+          percentualReservaBanca: Number(
+            data.percentualReservaBanca ?? PERCENTUAL_RESERVA_MINES
+          ),
+          modo: data.modo || "simulacao_controlada",
+          atualizadoEm: data.atualizadoEm || null,
+        };
+
+        setCassinoConfig(configAtualizada);
+
+        setConfigMinesEditada({
+          apostaMinima: String(configAtualizada.apostaMinima),
+          apostaMaxima: String(configAtualizada.apostaMaxima),
+          multiplicadorMaximo: String(configAtualizada.multiplicadorMaximo),
+          percentualReservaBanca: String(
+            Math.round(configAtualizada.percentualReservaBanca * 100)
+          ),
+        });
+      },
+      (error) => {
+        console.log("Erro ao escutar configuração do Mines:", error);
+      }
+    );
+
+    const qHistoricoCassino = query(
+      collection(db, "cassino_historico"),
+      orderBy("criadoEm", "desc"),
+      limit(20)
+    );
+
+    const unsubscribeHistorico = onSnapshot(
+      qHistoricoCassino,
+      (snapshot) => {
+        const lista: CassinoHistoricoItem[] = snapshot.docs.map((documento) => ({
+          id: documento.id,
+          ...(documento.data() as any),
+        }));
+
+        setCassinoHistorico(lista);
+      },
+      (error) => {
+        console.log("Erro ao escutar histórico do Mines:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeUsuarios();
+      unsubscribeConfig();
+      unsubscribeHistorico();
+    };
   }, []);
 
   useEffect(() => {
@@ -681,7 +863,7 @@ export default function AdminScreen() {
     );
   }
 
-  function alternarSecao(secao: "jogos" | "parcerias" | "saques" | "usuarios") {
+  function alternarSecao(secao: "jogos" | "parcerias" | "cassino" | "saques" | "usuarios") {
     setSecoesAbertas((prev) => ({
       ...prev,
       [secao]: !prev[secao],
@@ -932,6 +1114,308 @@ export default function AdminScreen() {
       ...saldosEditados,
       [email]: valor,
     });
+  }
+
+  function formatarSaldoFicticio(valor: number) {
+    return Number(valor || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function alterarSaldoFicticioCampo(email: string, valor: string) {
+    setSaldosFicticiosEditados({
+      ...saldosFicticiosEditados,
+      [email]: valor,
+    });
+  }
+
+  function pegarSaldoFicticioVisual(item: any) {
+    const emailLower = normalizarEmail(item.email || item.emailLower || "");
+    const uid = String(item.uid || item.id || "");
+
+    const saldos = [
+      Number(item.saldoFicticio || 0),
+      emailLower ? Number(saldosFicticiosUsers.porEmail[emailLower] || 0) : 0,
+      uid ? Number(saldosFicticiosUsers.porUid[uid] || 0) : 0,
+      emailLower ? Number(saldosFicticiosUsuarios.porEmail[emailLower] || 0) : 0,
+      uid ? Number(saldosFicticiosUsuarios.porUid[uid] || 0) : 0,
+    ].filter((valor) => !isNaN(valor));
+
+    if (saldos.length === 0) return 0;
+
+    return Math.max(...saldos);
+  }
+
+  async function definirSaldoFicticio(email: string, numero: number) {
+    if (isNaN(numero) || numero < 0) {
+      mostrarAlerta("Erro", "Digite um número válido.");
+      return;
+    }
+
+    const usuarioUsers = await buscarDocumentoPorEmailEmColecao("users", email);
+    const usuarioUsuarios = await buscarDocumentoPorEmailEmColecao(
+      "usuarios",
+      email
+    );
+
+    if (!usuarioUsers && !usuarioUsuarios) {
+      mostrarAlerta("Erro", "Usuário não encontrado no Firebase.");
+      return;
+    }
+
+    const base = usuarioUsers?.data || usuarioUsuarios?.data || {};
+    const uidBase =
+      String(base.uid || usuarioUsers?.id || usuarioUsuarios?.id || "") || "";
+    const nomeBase = base.nome || base.name || "Usuário";
+    const emailBase = base.email || email;
+    const emailLower = normalizarEmail(emailBase);
+
+    const dadosAtualizados = {
+      uid: uidBase,
+      nome: nomeBase,
+      email: emailBase,
+      emailLower,
+      saldoFicticio: numero,
+      atualizadoEm: serverTimestamp(),
+    };
+
+    const batch = writeBatch(db);
+
+    if (usuarioUsers) {
+      batch.set(usuarioUsers.ref, dadosAtualizados, { merge: true });
+    } else if (uidBase) {
+      batch.set(doc(db, "users", uidBase), dadosAtualizados, {
+        merge: true,
+      });
+    }
+
+    if (usuarioUsuarios) {
+      batch.set(usuarioUsuarios.ref, dadosAtualizados, { merge: true });
+    } else if (uidBase) {
+      batch.set(doc(db, "usuarios", uidBase), dadosAtualizados, {
+        merge: true,
+      });
+    }
+
+    await batch.commit();
+    await carregarUsuarios();
+  }
+
+  async function salvarSaldoFicticio(email: string) {
+    try {
+      const valorDigitado = saldosFicticiosEditados[email];
+
+      if (!valorDigitado) {
+        mostrarAlerta("Atenção", "Digite um valor de saldo fictício.");
+        return;
+      }
+
+      const numero = Number(valorDigitado.replace(",", "."));
+
+      await definirSaldoFicticio(email, numero);
+
+      setSaldosFicticiosEditados({
+        ...saldosFicticiosEditados,
+        [email]: "",
+      });
+
+      mostrarAlerta(
+        "Saldo fictício atualizado",
+        `Novo saldo fictício: ${formatarSaldoFicticio(numero)}`
+      );
+    } catch (error) {
+      console.log("Erro ao salvar saldo fictício:", error);
+      mostrarAlerta("Erro", "Não foi possível salvar o saldo fictício.");
+    }
+  }
+
+  async function ajustarSaldoFicticioRapido(email: string, saldoAtual: number, delta: number) {
+    try {
+      const novoSaldo = Math.max(0, Number((Number(saldoAtual || 0) + delta).toFixed(2)));
+      await definirSaldoFicticio(email, novoSaldo);
+      mostrarAlerta("Saldo fictício atualizado", `Novo saldo fictício: ${formatarSaldoFicticio(novoSaldo)}`);
+    } catch (error) {
+      console.log("Erro ao ajustar saldo fictício:", error);
+      mostrarAlerta("Erro", "Não foi possível ajustar o saldo fictício.");
+    }
+  }
+
+  function confirmarZerarSaldoFicticio(email: string, nome: string) {
+    mostrarConfirmacao(
+      "Zerar saldo fictício",
+      `Deseja zerar o saldo fictício de ${nome}?`,
+      () => ajustarSaldoFicticioRapido(email, 0, 0)
+    );
+  }
+
+  async function salvarBancaFicticia() {
+    try {
+      const numero = Number(bancaFicticiaEditada.replace(",", "."));
+
+      if (isNaN(numero) || numero < 0) {
+        mostrarAlerta("Erro", "Digite um valor válido para a banca fictícia.");
+        return;
+      }
+
+      setProcessandoCassino(true);
+
+      await setDoc(
+        doc(db, "cassino_config", "mines10"),
+        {
+          bancaFicticia: numero,
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setBancaFicticiaEditada("");
+      mostrarAlerta("Banca atualizada", `Nova banca fictícia: ${formatarSaldoFicticio(numero)}`);
+    } catch (error) {
+      console.log("Erro ao salvar banca fictícia:", error);
+      mostrarAlerta("Erro", "Não foi possível salvar a banca fictícia.");
+    } finally {
+      setProcessandoCassino(false);
+    }
+  }
+
+  async function ajustarBancaRapido(delta: number) {
+    try {
+      setProcessandoCassino(true);
+
+      const novoValor = Math.max(0, Number((bancaFicticiaAtual + delta).toFixed(2)));
+
+      await setDoc(
+        doc(db, "cassino_config", "mines10"),
+        {
+          bancaFicticia: novoValor,
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      mostrarAlerta("Banca atualizada", `Banca fictícia: ${formatarSaldoFicticio(novoValor)}`);
+    } catch (error) {
+      console.log("Erro ao ajustar banca fictícia:", error);
+      mostrarAlerta("Erro", "Não foi possível ajustar a banca fictícia.");
+    } finally {
+      setProcessandoCassino(false);
+    }
+  }
+
+  function alterarConfigMinesCampo(
+    campo: "apostaMinima" | "apostaMaxima" | "multiplicadorMaximo" | "percentualReservaBanca",
+    valor: string
+  ) {
+    setConfigMinesEditada((prev) => ({
+      ...prev,
+      [campo]: valor,
+    }));
+  }
+
+  async function salvarConfigMines() {
+    try {
+      const apostaMinima = Number(configMinesEditada.apostaMinima.replace(",", "."));
+      const apostaMaxima = Number(configMinesEditada.apostaMaxima.replace(",", "."));
+      const multiplicadorMaximo = Number(configMinesEditada.multiplicadorMaximo.replace(",", "."));
+      const reservaPercentual = Number(configMinesEditada.percentualReservaBanca.replace(",", "."));
+
+      if (
+        isNaN(apostaMinima) ||
+        isNaN(apostaMaxima) ||
+        isNaN(multiplicadorMaximo) ||
+        isNaN(reservaPercentual) ||
+        apostaMinima <= 0 ||
+        apostaMaxima < apostaMinima ||
+        multiplicadorMaximo < 1 ||
+        reservaPercentual < 0 ||
+        reservaPercentual > 95
+      ) {
+        mostrarAlerta("Erro", "Confira os valores da configuração do Mines.");
+        return;
+      }
+
+      setProcessandoCassino(true);
+
+      await setDoc(
+        doc(db, "cassino_config", "mines10"),
+        {
+          ativo: minesAtivo,
+          apostaMinima,
+          apostaMaxima,
+          multiplicadorMaximo,
+          percentualReservaBanca: reservaPercentual / 100,
+          modo: "simulacao_controlada",
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      mostrarAlerta("Configuração salva", "As regras do Mines foram atualizadas.");
+    } catch (error) {
+      console.log("Erro ao salvar configuração do Mines:", error);
+      mostrarAlerta("Erro", "Não foi possível salvar a configuração.");
+    } finally {
+      setProcessandoCassino(false);
+    }
+  }
+
+  async function alternarMinesAtivo(ativo: boolean) {
+    try {
+      setProcessandoCassino(true);
+
+      await setDoc(
+        doc(db, "cassino_config", "mines10"),
+        {
+          ativo,
+          modo: "simulacao_controlada",
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      mostrarAlerta(
+        ativo ? "Mines ativado" : "Mines desativado",
+        ativo
+          ? "Os usuários já podem acessar o Mines."
+          : "Os usuários verão que o Mines está indisponível."
+      );
+    } catch (error) {
+      console.log("Erro ao ativar/desativar Mines:", error);
+      mostrarAlerta("Erro", "Não foi possível alterar o status do Mines.");
+    } finally {
+      setProcessandoCassino(false);
+    }
+  }
+
+  async function zerarBancaFicticia() {
+    try {
+      setProcessandoCassino(true);
+
+      await setDoc(
+        doc(db, "cassino_config", "mines10"),
+        {
+          bancaFicticia: 0,
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      mostrarAlerta("Banca zerada", "A banca fictícia do Mines voltou para 0.");
+    } catch (error) {
+      console.log("Erro ao zerar banca fictícia:", error);
+      mostrarAlerta("Erro", "Não foi possível zerar a banca fictícia.");
+    } finally {
+      setProcessandoCassino(false);
+    }
+  }
+
+  function confirmarZerarBancaFicticia() {
+    mostrarConfirmacao(
+      "Zerar banca fictícia",
+      "Deseja zerar a banca fictícia do Mines? Isso não altera o saldo fictício dos usuários.",
+      () => zerarBancaFicticia()
+    );
   }
 
   function alterarResultadoManual(
@@ -1892,7 +2376,7 @@ export default function AdminScreen() {
   }
 
   function renderCabecalhoSecao(
-    secao: "jogos" | "parcerias" | "saques" | "usuarios",
+    secao: "jogos" | "parcerias" | "cassino" | "saques" | "usuarios",
     icone: string,
     titulo: string,
     subtitulo: string
@@ -1991,6 +2475,295 @@ export default function AdminScreen() {
             <Text style={styles.statLabel}>BRL em saque</Text>
           </View>
         </View>
+
+        {renderCabecalhoSecao(
+          "cassino",
+          "🎰",
+          "Mines 10",
+          `${minesAtivo ? "Ativo" : "Desativado"} • Banca: ${formatarSaldoFicticio(bancaFicticiaAtual)}`
+        )}
+
+        {secoesAbertas.cassino && (
+          <View style={styles.sectionContent}>
+            <View style={styles.minesPanel}>
+              <View style={styles.minesTopCard}>
+                <View style={styles.minesTitleRow}>
+                  <View style={styles.casinoIconCircle}>
+                    <Text style={styles.casinoIconText}>💣</Text>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.partnerLabel}>CASSINO FICTÍCIO</Text>
+                    <Text style={styles.partnerName}>Mines 10</Text>
+                    <Text style={styles.partnerSub}>
+                      Painel simples para controlar status, banca e regras do Mines.
+                    </Text>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.minesStatusBadge,
+                    minesAtivo ? styles.minesStatusAtivo : styles.minesStatusInativo,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.minesStatusText,
+                      minesAtivo ? styles.minesStatusTextAtivo : styles.minesStatusTextInativo,
+                    ]}
+                  >
+                    {minesAtivo ? "ATIVO" : "DESATIVADO"}
+                  </Text>
+                </View>
+
+                <View style={styles.minesActionRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.minesPrimaryButton,
+                      minesAtivo && styles.buttonDisabled,
+                    ]}
+                    onPress={() => alternarMinesAtivo(true)}
+                    disabled={processandoCassino || minesAtivo}
+                  >
+                    <Text style={styles.minesPrimaryButtonText}>Ativar Mines</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.minesDangerButton,
+                      !minesAtivo && styles.buttonDisabled,
+                    ]}
+                    onPress={() => alternarMinesAtivo(false)}
+                    disabled={processandoCassino || !minesAtivo}
+                  >
+                    <Text style={styles.minesDangerButtonText}>Desativar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={styles.minesSectionTitle}>Resumo rápido</Text>
+
+              <View style={styles.casinoMetricsGrid}>
+                <View style={styles.casinoMetricCard}>
+                  <Text style={styles.casinoMetricNumber}>{formatarSaldoFicticio(bancaFicticiaAtual)}</Text>
+                  <Text style={styles.casinoMetricLabel}>banca fictícia atual</Text>
+                </View>
+
+                <View style={styles.casinoMetricCard}>
+                  <Text style={styles.casinoMetricNumber}>{formatarSaldoFicticio(saldoLiberadoMines)}</Text>
+                  <Text style={styles.casinoMetricLabel}>liberado para pagamento</Text>
+                </View>
+
+                <View style={styles.casinoMetricCard}>
+                  <Text style={styles.casinoMetricNumber}>{formatarSaldoFicticio(totalApostadoMines)}</Text>
+                  <Text style={styles.casinoMetricLabel}>total apostado</Text>
+                </View>
+
+                <View style={styles.casinoMetricCard}>
+                  <Text style={styles.casinoMetricNumber}>{formatarSaldoFicticio(totalPagoMines)}</Text>
+                  <Text style={styles.casinoMetricLabel}>total pago</Text>
+                </View>
+
+                <View style={styles.casinoMetricCard}>
+                  <Text style={styles.casinoMetricNumber}>{formatarSaldoFicticio(lucroHistoricoMines)}</Text>
+                  <Text style={styles.casinoMetricLabel}>resultado histórico</Text>
+                </View>
+
+              </View>
+
+              <View style={styles.minesControlCard}>
+                <Text style={styles.minesSectionTitle}>Controle da banca</Text>
+                <Text style={styles.minesHelpText}>
+                  A banca começa em 0 e cresce conforme os usuários apostam. Você também pode corrigir manualmente.
+                </Text>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ex: 20"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                  value={bancaFicticiaEditada}
+                  onChangeText={setBancaFicticiaEditada}
+                />
+
+                <View style={styles.minesActionRow}>
+                  <TouchableOpacity
+                    style={[styles.saveButton, processandoCassino && styles.buttonDisabled]}
+                    onPress={salvarBancaFicticia}
+                    disabled={processandoCassino}
+                  >
+                    <Text style={styles.saveButtonText}>Salvar banca</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.minesMiniButton, processandoCassino && styles.buttonDisabled]}
+                    onPress={() => ajustarBancaRapido(10)}
+                    disabled={processandoCassino}
+                  >
+                    <Text style={styles.minesMiniButtonText}>+10</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.minesMiniButton, processandoCassino && styles.buttonDisabled]}
+                    onPress={() => ajustarBancaRapido(50)}
+                    disabled={processandoCassino}
+                  >
+                    <Text style={styles.minesMiniButtonText}>+50</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.minesDangerOutlineButton, processandoCassino && styles.buttonDisabled]}
+                  onPress={confirmarZerarBancaFicticia}
+                  disabled={processandoCassino}
+                >
+                  <Text style={styles.minesDangerOutlineText}>Zerar banca fictícia</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.minesControlCard}>
+                <Text style={styles.minesSectionTitle}>Configurações do jogo</Text>
+                <Text style={styles.minesHelpText}>
+                  Esses campos controlam aposta, teto global de multiplicador e preservação da banca. O multiplicador real muda conforme a quantidade de minas.
+                </Text>
+
+                <View style={styles.minesConfigGrid}>
+                  <View style={styles.minesConfigField}>
+                    <Text style={styles.minesConfigLabel}>Aposta mínima</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="1"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={configMinesEditada.apostaMinima}
+                      onChangeText={(valor) => alterarConfigMinesCampo("apostaMinima", valor)}
+                    />
+                  </View>
+
+                  <View style={styles.minesConfigField}>
+                    <Text style={styles.minesConfigLabel}>Aposta máxima</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="100"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={configMinesEditada.apostaMaxima}
+                      onChangeText={(valor) => alterarConfigMinesCampo("apostaMaxima", valor)}
+                    />
+                  </View>
+
+                  <View style={styles.minesConfigField}>
+                    <Text style={styles.minesConfigLabel}>Multiplicador máximo global</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="23.33"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={configMinesEditada.multiplicadorMaximo}
+                      onChangeText={(valor) => alterarConfigMinesCampo("multiplicadorMaximo", valor)}
+                    />
+                  </View>
+
+                  <View style={styles.minesConfigField}>
+                    <Text style={styles.minesConfigLabel}>Reserva da banca %</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="25"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                      value={configMinesEditada.percentualReservaBanca}
+                      onChangeText={(valor) => alterarConfigMinesCampo("percentualReservaBanca", valor)}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.minesPrimaryButtonFull, processandoCassino && styles.buttonDisabled]}
+                  onPress={salvarConfigMines}
+                  disabled={processandoCassino}
+                >
+                  <Text style={styles.minesPrimaryButtonText}>Salvar configurações</Text>
+                </TouchableOpacity>
+
+                <View style={styles.minesRulesBox}>
+                  <Text style={styles.minesRulesText}>Status: {minesAtivo ? "ativo" : "desativado"}</Text>
+                  <Text style={styles.minesRulesText}>Aposta: {formatarSaldoFicticio(apostaMinimaMines)} até {formatarSaldoFicticio(apostaMaximaMines)}</Text>
+                  <Text style={styles.minesRulesText}>Multiplicador máximo global: {multiplicadorMaximoMines}x</Text>
+                  <Text style={styles.minesRulesText}>Reserva preservada: {(percentualReservaMines * 100).toFixed(0)}%</Text>
+                  <Text style={styles.minesRulesText}>Controle automático da banca: ligado</Text>
+                </View>
+
+                <View style={styles.minesRiskBox}>
+                  <Text style={styles.minesRiskTitle}>Tabela de risco do Mines</Text>
+                  <Text style={styles.minesHelpText}>
+                    Quanto mais minas, maior o risco e maior o multiplicador. Mesmo assim, o pagamento final continua limitado pela banca fictícia e pela reserva definida acima.
+                  </Text>
+
+                  <View style={styles.minesRiskRowHeader}>
+                    <Text style={styles.minesRiskHeader}>Minas</Text>
+                    <Text style={styles.minesRiskHeader}>1º acerto</Text>
+                    <Text style={styles.minesRiskHeader}>Pode chegar até</Text>
+                  </View>
+
+                  {[
+                    { minas: 2, primeiro: "1.01x", maximo: "1.50x", risco: "baixo" },
+                    { minas: 5, primeiro: "1.16x", maximo: "2.80x", risco: "médio" },
+                    { minas: 10, primeiro: "1.55x", maximo: "5.40x", risco: "alto" },
+                    { minas: 15, primeiro: "2.33x", maximo: "10.50x", risco: "muito alto" },
+                    { minas: 24, primeiro: "23.33x", maximo: "23.33x", risco: "extremo" },
+                  ].map((linha) => (
+                    <View style={styles.minesRiskRow} key={`risco-${linha.minas}`}>
+                      <Text style={styles.minesRiskCell}>{linha.minas}</Text>
+                      <Text style={styles.minesRiskCell}>{linha.primeiro}</Text>
+                      <Text style={styles.minesRiskCell}>{linha.maximo}</Text>
+                      <Text style={styles.minesRiskTag}>{linha.risco}</Text>
+                    </View>
+                  ))}
+
+                  <View style={styles.minesInfoHighlight}>
+                    <Text style={styles.minesInfoHighlightText}>
+                      Exemplo: se o usuário aposta 10 em 10 minas, o ganho teórico pode subir bastante, mas o saque só libera até onde a banca e a reserva permitirem.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.minesControlCard}>
+                <Text style={styles.minesSectionTitle}>Histórico recente</Text>
+
+                {cassinoHistorico.length === 0 && (
+                  <View style={styles.noWinnerBox}>
+                    <Text style={styles.noWinnerText}>
+                      Nenhuma rodada registrada ainda.
+                    </Text>
+                  </View>
+                )}
+
+                {cassinoHistorico.map((item) => (
+                  <View style={styles.casinoHistoryCard} key={item.id}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.partnerUserName}>{item.nome || "Usuário"}</Text>
+                      <Text style={styles.partnerUserEmail}>
+                        {item.resultado === "sacou" ? "Sacou" : "Perdeu"} • Aposta {formatarSaldoFicticio(Number(item.aposta || 0))}
+                      </Text>
+                      <Text style={styles.partnerUserMeta}>
+                        Pagamento {formatarSaldoFicticio(Number(item.pagamento || 0))} • Líquido {formatarSaldoFicticio(Number(item.ganhoLiquido || 0))} • {formatarDataHora(item.criadoEm)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.warningCard}>
+                <Text style={styles.warningTitle}>Resumo da regra</Text>
+                <Text style={styles.warningText}>
+                  O Mines usa o mesmo saldo do Perfil/Bolão. A banca fictícia é separada e aumenta quando alguém aposta. Se você desativar o Mines, a tela do usuário bloqueia novas rodadas.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {renderCabecalhoSecao(
           "parcerias",
@@ -3540,6 +4313,451 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 20,
+  },
+
+  casinoCard: {
+    backgroundColor: "#0B1B13",
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 18,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "rgba(247,201,72,0.35)",
+  },
+
+  casinoIconCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#F7C948",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+
+  casinoIconText: {
+    fontSize: 28,
+  },
+
+  casinoMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 16,
+  },
+
+  casinoMetricCard: {
+    flexGrow: 1,
+    minWidth: 140,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(247,201,72,0.20)",
+  },
+
+  casinoMetricNumber: {
+    color: "#F7C948",
+    fontSize: 24,
+    fontWeight: "900",
+  },
+
+  casinoMetricLabel: {
+    color: "#D1D5DB",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+
+  casinoFinanceBox: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+
+  casinoFinanceTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 10,
+  },
+
+  casinoActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
+  },
+
+  casinoDangerButton: {
+    flex: 1,
+    backgroundColor: "#7F1D1D",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+
+  casinoDangerButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+  },
+
+  casinoHistoryCard: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+
+  fakeBalanceBadge: {
+    backgroundColor: "#3A2500",
+    borderColor: "#F7C948",
+  },
+
+  fakeBalanceBadgeText: {
+    color: "#F7C948",
+    fontWeight: "900",
+  },
+
+  casinoSaveButton: {
+    backgroundColor: "#F7C948",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+
+  minesPanel: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 22,
+    padding: 14,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  minesTopCard: {
+    backgroundColor: "#0B1B13",
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(247,201,72,0.35)",
+    marginBottom: 14,
+  },
+
+  minesTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+
+  minesStatusBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginBottom: 12,
+  },
+
+  minesStatusAtivo: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  minesStatusInativo: {
+    backgroundColor: "#FEE2E2",
+  },
+
+  minesStatusText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  minesStatusTextAtivo: {
+    color: "#166534",
+  },
+
+  minesStatusTextInativo: {
+    color: "#991B1B",
+  },
+
+  minesActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
+    marginTop: 8,
+  },
+
+  minesPrimaryButton: {
+    flexGrow: 1,
+    backgroundColor: "#006B2E",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+  },
+
+  minesPrimaryButtonFull: {
+    backgroundColor: "#006B2E",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  minesPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+  },
+
+  minesDangerButton: {
+    flexGrow: 1,
+    backgroundColor: "#991B1B",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+  },
+
+  minesDangerButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+  },
+
+  minesSectionTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 8,
+    marginTop: 4,
+  },
+
+  minesControlCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 15,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  minesHelpText: {
+    color: "#6B7280",
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+
+  minesMiniButton: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    minWidth: 64,
+  },
+
+  minesMiniButtonText: {
+    color: "#F7C948",
+    fontWeight: "900",
+  },
+
+  minesDangerOutlineButton: {
+    borderWidth: 1,
+    borderColor: "#991B1B",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 10,
+    backgroundColor: "#FEF2F2",
+  },
+
+  minesDangerOutlineText: {
+    color: "#991B1B",
+    fontWeight: "900",
+  },
+
+  minesConfigGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  minesConfigField: {
+    flexGrow: 1,
+    minWidth: 145,
+  },
+
+  minesConfigLabel: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+
+  minesRulesBox: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 12,
+  },
+
+  minesRulesText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+
+  minesUserCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 12,
+  },
+
+  minesUserHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+
+  minesUserName: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  minesUserEmail: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  minesUserSaldoBadge: {
+    backgroundColor: "#3A2500",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#F7C948",
+  },
+
+  minesUserSaldoText: {
+    color: "#F7C948",
+    fontWeight: "900",
+  },
+
+  minesDangerMiniButton: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+  },
+
+  minesDangerMiniText: {
+    color: "#991B1B",
+    fontWeight: "900",
+  },
+
+  minesRiskBox: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  minesRiskTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+
+  minesRiskRowHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#111827",
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    gap: 8,
+  },
+
+  minesRiskHeader: {
+    flex: 1,
+    color: "#F7C948",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  minesRiskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 7,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    gap: 8,
+  },
+
+  minesRiskCell: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  minesRiskTag: {
+    color: "#006B2E",
+    fontSize: 11,
+    fontWeight: "900",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+
+  minesInfoHighlight: {
+    backgroundColor: "#FFF7CC",
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#F7C948",
+  },
+
+  minesInfoHighlightText: {
+    color: "#3A2500",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+
+  buttonDisabled: {
+    opacity: 0.45,
   },
 
   blockedBox: {

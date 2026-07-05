@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { mostrarAlerta } from "../../utils/mostrarAlerta";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -53,6 +53,7 @@ type SaqueUsuario = {
 
 export default function PerfilScreen() {
   const { user, logout } = useAuth();
+  const params = useLocalSearchParams();
 
   const [modalDeposito, setModalDeposito] = useState(false);
   const [valorDeposito, setValorDeposito] = useState("10");
@@ -72,6 +73,12 @@ export default function PerfilScreen() {
     melhorPalpite: "Nenhum palpite ainda",
     melhorPosicao: "Aguardando resultado",
   });
+
+  useEffect(() => {
+    if (params?.abrirDeposito === "1") {
+      setModalDeposito(true);
+    }
+  }, [params?.abrirDeposito]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -849,7 +856,10 @@ export default function PerfilScreen() {
       </Modal>
 
       <View style={styles.bottomMenu}>
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/")}
+        >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
         </TouchableOpacity>
@@ -868,6 +878,14 @@ export default function PerfilScreen() {
         >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/cassino")}
+        >
+          <Text style={styles.menuIcon}>🎰</Text>
+          <Text style={styles.menuText}>Cassino</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1335,9 +1353,19 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
 
-  menuItem: { flex: 1, alignItems: "center", justifyContent: "center" },
-  menuItemActive: { flex: 1, alignItems: "center", justifyContent: "center" },
-  menuIcon: { fontSize: 22 },
+  menuItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuItemActive: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuIcon: {
+    fontSize: 22,
+  },
   menuText: {
     fontSize: 11,
     color: "#6B7280",

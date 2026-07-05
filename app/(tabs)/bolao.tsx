@@ -30,6 +30,15 @@ type Aposta = {
   jogo: string;
   jogoId: string;
   valor: number;
+  patrocinadorId?: string;
+  patrocinadorNome?: string;
+  parceiroId?: string;
+  parceiroNome?: string;
+  origemPatrocinador?: string;
+  origem?: string;
+  codigoPatrocinador?: string;
+  cadastroOrigem?: string;
+  utm_source?: string;
   criadoEm?: any;
   atualizadoEm?: any;
 };
@@ -71,6 +80,107 @@ const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 40;
 
 const VALOR_APOSTA = 10;
+
+const NOMES_TIMES_PT: Record<string, string> = {
+  BRA: "Brasil",
+  NOR: "Noruega",
+  ARG: "Argentina",
+  JPN: "Japão",
+  CRO: "Croácia",
+  GHA: "Gana",
+  POR: "Portugal",
+  ESP: "Espanha",
+  FRA: "França",
+  GER: "Alemanha",
+  ITA: "Itália",
+  ENG: "Inglaterra",
+  WAL: "País de Gales",
+  SCO: "Escócia",
+  NIR: "Irlanda do Norte",
+  USA: "Estados Unidos",
+  MEX: "México",
+  CAN: "Canadá",
+  URU: "Uruguai",
+  COL: "Colômbia",
+  CHI: "Chile",
+  PER: "Peru",
+  ECU: "Equador",
+  BOL: "Bolívia",
+  PAR: "Paraguai",
+  VEN: "Venezuela",
+  NED: "Holanda",
+  BEL: "Bélgica",
+  SUI: "Suíça",
+  DEN: "Dinamarca",
+  SWE: "Suécia",
+  POL: "Polônia",
+  TUR: "Turquia",
+  UKR: "Ucrânia",
+  RUS: "Rússia",
+  MAR: "Marrocos",
+  SEN: "Senegal",
+  NGR: "Nigéria",
+  NGA: "Nigéria",
+  CIV: "Costa do Marfim",
+  EGY: "Egito",
+  RSA: "África do Sul",
+  KOR: "Coreia do Sul",
+  PRK: "Coreia do Norte",
+  CHN: "China",
+  AUS: "Austrália",
+  NZL: "Nova Zelândia",
+  SAU: "Arábia Saudita",
+  IRN: "Irã",
+  IRQ: "Iraque",
+  QAT: "Catar",
+  UAE: "Emirados Árabes",
+  ARE: "Emirados Árabes",
+  CRC: "Costa Rica",
+  PAN: "Panamá",
+  HON: "Honduras",
+  JAM: "Jamaica",
+  SRB: "Sérvia",
+  BIH: "Bósnia e Herzegovina",
+  CMR: "Camarões",
+  TUN: "Tunísia",
+  ALG: "Argélia",
+  GRE: "Grécia",
+  GRC: "Grécia",
+  CZE: "Tchéquia",
+  AUT: "Áustria",
+  HUN: "Hungria",
+  ROU: "Romênia",
+  SVK: "Eslováquia",
+  SVN: "Eslovênia",
+  FIN: "Finlândia",
+  IRL: "Irlanda",
+  ISL: "Islândia",
+  ALB: "Albânia",
+  MKD: "Macedônia do Norte",
+  GEO: "Geórgia",
+  ISR: "Israel",
+  JOR: "Jordânia",
+  SYR: "Síria",
+  OMA: "Omã",
+  BHR: "Bahrein",
+  KUW: "Kuwait",
+  UZB: "Uzbequistão",
+  THA: "Tailândia",
+  VIE: "Vietnã",
+  VNM: "Vietnã",
+  IDN: "Indonésia",
+  MAS: "Malásia",
+  MYS: "Malásia",
+  CPV: "Cabo Verde",
+  COD: "RD Congo",
+  DZA: "Argélia",
+};
+
+function traduzirNomeTime(sigla?: string, nomeOriginal?: string) {
+  const codigo = String(sigla || "").toUpperCase();
+  return NOMES_TIMES_PT[codigo] || nomeOriginal || codigo || "Time";
+}
+
 
 // duração estimada para mostrar “termina em”
 const DURACAO_ESTIMADA_JOGO_MS = 2 * 60 * 60 * 1000;
@@ -221,13 +331,13 @@ export default function BolaoScreen() {
               startMillis: dataJogo.getTime(),
               apostasAbertas,
               timeCasa: {
-                nome: timeCasa.team.displayName,
+                nome: traduzirNomeTime(timeCasa.team.abbreviation, timeCasa.team.displayName),
                 sigla: timeCasa.team.abbreviation,
                 bandeira:
                   timeCasa.team.logo || "https://via.placeholder.com/50",
               },
               timeFora: {
-                nome: timeFora.team.displayName,
+                nome: traduzirNomeTime(timeFora.team.abbreviation, timeFora.team.displayName),
                 sigla: timeFora.team.abbreviation,
                 bandeira:
                   timeFora.team.logo || "https://via.placeholder.com/50",
@@ -274,6 +384,15 @@ export default function BolaoScreen() {
             jogo: data.jogo || "",
             jogoId: String(data.jogoId || ""),
             valor: Number(data.valor || VALOR_APOSTA),
+            patrocinadorId: data.patrocinadorId || "",
+            patrocinadorNome: data.patrocinadorNome || "",
+            parceiroId: data.parceiroId || "",
+            parceiroNome: data.parceiroNome || "",
+            origemPatrocinador: data.origemPatrocinador || "",
+            origem: data.origem || "",
+            codigoPatrocinador: data.codigoPatrocinador || "",
+            cadastroOrigem: data.cadastroOrigem || "",
+            utm_source: data.utm_source || "",
             criadoEm: data.criadoEm,
             atualizadoEm: data.atualizadoEm,
           };
@@ -438,6 +557,23 @@ export default function BolaoScreen() {
       .replace(/\s+/g, " ")
       .trim();
   }
+
+  function itemVeioDaAura(item: any) {
+    const campos = [
+      item?.patrocinadorId,
+      item?.patrocinadorNome,
+      item?.parceiroId,
+      item?.parceiroNome,
+      item?.origemPatrocinador,
+      item?.origem,
+      item?.codigoPatrocinador,
+      item?.cadastroOrigem,
+      item?.utm_source,
+    ].map((campo) => normalizarTexto(String(campo || "")));
+
+    return campos.some((campo) => campo.includes("aura"));
+  }
+
 
   function pegarMillis(data?: any) {
     if (!data) return 0;
@@ -798,7 +934,19 @@ export default function BolaoScreen() {
                 </View>
 
                 <View style={styles.userInfo}>
-                  <Text style={styles.userName}>{item.nome || "Usuário"}</Text>
+                  <View style={styles.userNameRow}>
+                    <Text style={styles.userName}>{item.nome || "Usuário"}</Text>
+
+                    {itemVeioDaAura(item) && (
+                      <View style={styles.auraBadge}>
+                        <Text style={styles.auraBadgeText}>✨ Aura</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {itemVeioDaAura(item) && (
+                    <Text style={styles.auraSubText}>Cliente Aura Lounge</Text>
+                  )}
 
                   <Text style={styles.userBet}>
                     {item.jogo ||
@@ -825,7 +973,10 @@ export default function BolaoScreen() {
       </ScrollView>
 
       <View style={styles.bottomMenu}>
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/")}
+        >
           <Text style={styles.menuIcon}>🏠</Text>
           <Text style={styles.menuText}>Início</Text>
         </TouchableOpacity>
@@ -841,6 +992,14 @@ export default function BolaoScreen() {
         <TouchableOpacity style={styles.menuItemActive}>
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuTextActive}>Bolão</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/cassino")}
+        >
+          <Text style={styles.menuIcon}>🎰</Text>
+          <Text style={styles.menuText}>Cassino</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1226,10 +1385,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  userNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
   userName: {
     color: "#111827",
     fontSize: 20,
     fontWeight: "900",
+  },
+
+  auraBadge: {
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#FFD500",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+
+  auraBadgeText: {
+    color: "#FFD500",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  auraSubText: {
+    color: "#8B5A00",
+    fontSize: 12,
+    fontWeight: "900",
+    marginTop: 2,
   },
 
   userBet: {

@@ -26,6 +26,107 @@ import { useSponsor } from "../../contexts/SponsorContext";
 
 const VALOR_APOSTA = 10;
 
+const NOMES_TIMES_PT: Record<string, string> = {
+  BRA: "Brasil",
+  NOR: "Noruega",
+  ARG: "Argentina",
+  JPN: "Japão",
+  CRO: "Croácia",
+  GHA: "Gana",
+  POR: "Portugal",
+  ESP: "Espanha",
+  FRA: "França",
+  GER: "Alemanha",
+  ITA: "Itália",
+  ENG: "Inglaterra",
+  WAL: "País de Gales",
+  SCO: "Escócia",
+  NIR: "Irlanda do Norte",
+  USA: "Estados Unidos",
+  MEX: "México",
+  CAN: "Canadá",
+  URU: "Uruguai",
+  COL: "Colômbia",
+  CHI: "Chile",
+  PER: "Peru",
+  ECU: "Equador",
+  BOL: "Bolívia",
+  PAR: "Paraguai",
+  VEN: "Venezuela",
+  NED: "Holanda",
+  BEL: "Bélgica",
+  SUI: "Suíça",
+  DEN: "Dinamarca",
+  SWE: "Suécia",
+  POL: "Polônia",
+  TUR: "Turquia",
+  UKR: "Ucrânia",
+  RUS: "Rússia",
+  MAR: "Marrocos",
+  SEN: "Senegal",
+  NGR: "Nigéria",
+  NGA: "Nigéria",
+  CIV: "Costa do Marfim",
+  EGY: "Egito",
+  RSA: "África do Sul",
+  KOR: "Coreia do Sul",
+  PRK: "Coreia do Norte",
+  CHN: "China",
+  AUS: "Austrália",
+  NZL: "Nova Zelândia",
+  SAU: "Arábia Saudita",
+  IRN: "Irã",
+  IRQ: "Iraque",
+  QAT: "Catar",
+  UAE: "Emirados Árabes",
+  ARE: "Emirados Árabes",
+  CRC: "Costa Rica",
+  PAN: "Panamá",
+  HON: "Honduras",
+  JAM: "Jamaica",
+  SRB: "Sérvia",
+  BIH: "Bósnia e Herzegovina",
+  CMR: "Camarões",
+  TUN: "Tunísia",
+  ALG: "Argélia",
+  GRE: "Grécia",
+  GRC: "Grécia",
+  CZE: "Tchéquia",
+  AUT: "Áustria",
+  HUN: "Hungria",
+  ROU: "Romênia",
+  SVK: "Eslováquia",
+  SVN: "Eslovênia",
+  FIN: "Finlândia",
+  IRL: "Irlanda",
+  ISL: "Islândia",
+  ALB: "Albânia",
+  MKD: "Macedônia do Norte",
+  GEO: "Geórgia",
+  ISR: "Israel",
+  JOR: "Jordânia",
+  SYR: "Síria",
+  OMA: "Omã",
+  BHR: "Bahrein",
+  KUW: "Kuwait",
+  UZB: "Uzbequistão",
+  THA: "Tailândia",
+  VIE: "Vietnã",
+  VNM: "Vietnã",
+  IDN: "Indonésia",
+  MAS: "Malásia",
+  MYS: "Malásia",
+  CPV: "Cabo Verde",
+  COD: "RD Congo",
+  DZA: "Argélia",
+};
+
+function traduzirNomeTime(sigla?: string, nomeOriginal?: string) {
+  const codigo = String(sigla || "").toUpperCase();
+  return NOMES_TIMES_PT[codigo] || nomeOriginal || codigo || "Time";
+}
+
+
 // Mantivemos este ID apenas para não quebrar a sua lógica atual de notificações do Backend
 const JOGO_ID_NOTIFICACAO = "brasil-argentina-2026";
 
@@ -297,13 +398,13 @@ export default function HomeScreen() {
             }),
             startMillis: dataJogo.getTime(),
             timeCasa: {
-              nome: timeCasa.team.displayName,
+              nome: traduzirNomeTime(timeCasa.team.abbreviation, timeCasa.team.displayName),
               sigla: timeCasa.team.abbreviation,
               bandeira: getBandeiraUrl(timeCasa.team.abbreviation) || timeCasa.team.logo || "",
               bandeiraOriginal: timeCasa.team.logo || "",
             },
             timeFora: {
-              nome: timeFora.team.displayName,
+              nome: traduzirNomeTime(timeFora.team.abbreviation, timeFora.team.displayName),
               sigla: timeFora.team.abbreviation,
               bandeira: getBandeiraUrl(timeFora.team.abbreviation) || timeFora.team.logo || "",
               bandeiraOriginal: timeFora.team.logo || "",
@@ -586,29 +687,42 @@ export default function HomeScreen() {
           <Text style={styles.menuTextActive}>Início</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/apostar")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/apostar")}
+        >
           <Text style={styles.menuIcon}>🎯</Text>
           <Text style={styles.menuText}>Apostar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/bolao")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/bolao")}
+        >
           <Text style={styles.menuIcon}>👥</Text>
           <Text style={styles.menuText}>Bolão</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/ranking")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/cassino")}
+        >
+          <Text style={styles.menuIcon}>🎰</Text>
+          <Text style={styles.menuText}>Cassino</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/ranking")}
+        >
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuText}>Ranking</Text>
         </TouchableOpacity>
 
-        {user?.email === "admin@bolao.com" && (
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/gerenciar")}>
-            <Text style={styles.menuIcon}>⚙️</Text>
-            <Text style={styles.menuText}>Gerenciar</Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/perfil")}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/perfil")}
+        >
           <Text style={styles.menuIcon}>👤</Text>
           <Text style={styles.menuText}>Perfil</Text>
         </TouchableOpacity>
@@ -1000,14 +1114,14 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   menuItem: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    flex: 1,
   },
   menuItemActive: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    flex: 1,
   },
   menuIcon: {
     fontSize: 22,

@@ -460,6 +460,14 @@ export default function RankingScreen() {
           <Text style={styles.menuText}>Bolão</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => router.push("/cassino")}
+        >
+          <Text style={styles.menuIcon}>🎰</Text>
+          <Text style={styles.menuText}>Cassino</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.menuItemActive}>
           <Text style={styles.menuIcon}>🏆</Text>
           <Text style={styles.menuTextActive}>Ranking</Text>
@@ -833,7 +841,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  menuIcon: { fontSize: 22 },
+  menuIcon: {
+    fontSize: 22,
+  },
 
   menuText: {
     fontSize: 11,
