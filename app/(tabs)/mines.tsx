@@ -182,7 +182,7 @@ export default function CassinoScreen() {
   const [casasReveladas, setCasasReveladas] = useState<Record<number, ResultadoCasa>>({});
   const [casasSeguras, setCasasSeguras] = useState(0);
   const [ganhoAtual, setGanhoAtual] = useState(0);
-  const [mensagem, setMensagem] = useState("Selecione o numero de minas, é começe a rodada!");
+  const [mensagem, setMensagem] = useState("Selecione o número de minas e comece a rodada!");
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
 
   const minesAtivo = cassinoConfig.ativo !== false;
@@ -352,7 +352,7 @@ export default function CassinoScreen() {
 
     if (aposta < apostaMinimaConfig || aposta > apostaMaximaConfig) {
       setMensagem(
-        `A aposta precisa estar entre ${formatarSaldo(apostaMinimaConfig)} e ${formatarSaldo(apostaMaximaConfig)} saldo fictício.`
+        `A aposta precisa estar entre ${formatarSaldo(apostaMinimaConfig)} e ${formatarSaldo(apostaMaximaConfig)} saldo.`
       );
       return;
     }
@@ -400,7 +400,7 @@ export default function CassinoScreen() {
 
         if (aposta < apostaMinimaFirebase || aposta > apostaMaximaFirebase) {
           throw new Error(
-            `A aposta precisa estar entre ${formatarSaldo(apostaMinimaFirebase)} e ${formatarSaldo(apostaMaximaFirebase)} saldo fictício.`
+            `A aposta precisa estar entre ${formatarSaldo(apostaMinimaFirebase)} e ${formatarSaldo(apostaMaximaFirebase)} saldo.`
           );
         }
 
@@ -545,7 +545,7 @@ export default function CassinoScreen() {
     setMensagem(
       `💎 Casa segura. Multiplicador ${formatarMultiplicador(
         pegarMultiplicador(minasDaRodada, proximasCasasSeguras, multiplicadorMaximoConfig)
-      )}. Saque disponível: ${formatarSaldo(saqueProtegido)} saldo fictício.`
+      )}. Saque disponível: ${formatarSaldo(saqueProtegido)} saldo.`
     );
   }
 
@@ -553,7 +553,7 @@ export default function CassinoScreen() {
     if (!user?.uid || !emJogo || processando) return;
 
     if (saqueDisponivel <= 0) {
-      setMensagem("Ainda não há saldo fictício disponível para sacar.");
+      setMensagem("Ainda não há saldo disponível para sacar.");
       return;
     }
 
@@ -642,7 +642,7 @@ export default function CassinoScreen() {
       setMensagem(
         `✅ Você sacou ${formatarSaldo(
           resultado.pagamento
-        )} saldo fictício. Resultado líquido: ${formatarSaldo(lucroLiquido)}.`
+        )} saldo. Resultado líquido: ${formatarSaldo(lucroLiquido)}.`
       );
 
       await registrarHistorico("sacou", resultado.pagamento, lucroLiquido, "saque_usuario");
