@@ -182,7 +182,7 @@ export default function CassinoScreen() {
   const [casasReveladas, setCasasReveladas] = useState<Record<number, ResultadoCasa>>({});
   const [casasSeguras, setCasasSeguras] = useState(0);
   const [ganhoAtual, setGanhoAtual] = useState(0);
-  const [mensagem, setMensagem] = useState("Configure a rodada e comece a simulação.");
+  const [mensagem, setMensagem] = useState("Selecione o numero de minas, é começe a rodada!");
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
 
   const minesAtivo = cassinoConfig.ativo !== false;
