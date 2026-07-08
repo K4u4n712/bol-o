@@ -6,7 +6,7 @@ const INFINITEPAY_HANDLE = "pitstoplanchepizzariaa";
 const PUBLIC_BASE_URL = "https://bol-o-rouge.vercel.app";
 
 // Site/PWA para onde o usuário deve voltar depois do pagamento
-const PWA_BASE_URL = "https://bolao10-web.vercel.app";
+const PWA_BASE_URL = "https://bonde62goiania.vercel.app";
 
 // Preço oficial do lote secreto Bonde 62
 const PRECO_BONDE62_LOTE_SECRETO = 1;
