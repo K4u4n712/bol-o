@@ -16,7 +16,7 @@ const SEU_NUMERO_WHATSAPP = "5562999999999"; // TROQUE PELO SEU NÚMERO
 const API_CREATE_CHECKOUT_URL =
   "https://bol-o-rouge.vercel.app/api/create-checkout";
 
-const PRECO_LOTE_SECRETO = 29.9;
+const PRECO_LOTE_SECRETO = 1;
 const TEMPO_PROMO_SEGUNDOS = 15 * 60;
 
 export default function Bonde62() {

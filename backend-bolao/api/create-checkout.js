@@ -9,7 +9,7 @@ const PUBLIC_BASE_URL = "https://bol-o-rouge.vercel.app";
 const PWA_BASE_URL = "https://bolao10-web.vercel.app";
 
 // Preço oficial do lote secreto Bonde 62
-const PRECO_BONDE62_LOTE_SECRETO = 29.9;
+const PRECO_BONDE62_LOTE_SECRETO = 1;
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
