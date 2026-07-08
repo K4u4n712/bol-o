@@ -26,7 +26,6 @@ module.exports = async function handler(req, res) {
       items,
     } = body || {};
 
-    // A InfinitePay pode enviar como slug ou invoice_slug.
     const invoiceSlug = body?.invoice_slug || body?.slug;
 
     if (!order_nsu) {
@@ -122,6 +121,65 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // ============================
+    // BONDE 62 — CRIA INGRESSO
+    // ============================
+    if (pagamento.tipo === "bonde62_ingresso") {
+      const quantidade = Number(pagamento.quantidade || 1);
+
+      await db.runTransaction(async (transaction) => {
+        transaction.update(pagamentoRef, {
+          status: "paid",
+          ingressoStatus: "confirmed",
+          pagoEm: admin.firestore.FieldValue.serverTimestamp(),
+          invoice_slug: invoiceSlug,
+          amount: amount || null,
+          paid_amount: paid_amount || null,
+          installments: installments || null,
+          capture_method: capture_method || null,
+          transaction_nsu,
+          receipt_url: receipt_url || null,
+          items: Array.isArray(items) ? items : [],
+          webhookRecebido: body,
+          paymentCheck: checkData,
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        for (let i = 1; i <= quantidade; i++) {
+          const ingressoId = `${order_nsu}-${i}`;
+          const ingressoRef = db.collection("bonde62_ingressos").doc(ingressoId);
+
+          transaction.set(ingressoRef, {
+            ingressoId,
+            order_nsu,
+            evento: "bonde62",
+            nome: pagamento.nome || "",
+            email: pagamento.email || "",
+            whatsapp: pagamento.whatsapp || "",
+            lote: pagamento.lote || "lote_secreto",
+            valorTotal: Number(pagamento.valorReais || 0),
+            valorCentavos: Number(pagamento.valorCentavos || 0),
+            quantidade,
+            status: "valid",
+            usado: false,
+            usadoEm: null,
+            transaction_nsu,
+            receipt_url: receipt_url || null,
+            criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: null,
+      });
+    }
+
+    // ============================
+    // BOLÃO — MANTÉM SALDO NORMAL
+    // ============================
     const userRef = db.collection("usuarios").doc(pagamento.uid);
 
     await db.runTransaction(async (transaction) => {
