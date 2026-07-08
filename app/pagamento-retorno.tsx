@@ -50,6 +50,8 @@ function statusErro(status?: any) {
     "checkout_error",
     "rejected",
     "recusado",
+    "value_mismatch",
+    "check_failed",
   ].includes(statusTexto);
 }
 
@@ -67,6 +69,18 @@ export default function PagamentoRetornoScreen() {
     return valor ? String(valor) : "";
   }, [params.order_nsu]);
 
+  const tipoParam = useMemo(() => {
+    const valor = params.tipo;
+
+    if (Array.isArray(valor)) {
+      return valor[0] || "";
+    }
+
+    return valor ? String(valor) : "";
+  }, [params.tipo]);
+
+  const isBonde62 = tipoParam === "bonde62";
+
   const deepLinkApp = useMemo(() => {
     if (orderNsu) {
       return `appbolao://pagamento-retorno?order_nsu=${encodeURIComponent(orderNsu)}`;
@@ -77,15 +91,22 @@ export default function PagamentoRetornoScreen() {
 
   const [statusTela, setStatusTela] = useState<PagamentoStatus>("carregando");
   const [mensagem, setMensagem] = useState(
-    "Estamos confirmando seu pagamento. Aguarde alguns segundos..."
+    isBonde62
+      ? "Estamos confirmando seu ingresso. Aguarde alguns segundos..."
+      : "Estamos confirmando seu pagamento. Aguarde alguns segundos..."
   );
   const [valorPago, setValorPago] = useState<number | null>(null);
+  const [compradorNome, setCompradorNome] = useState("");
+  const [compradorEmail, setCompradorEmail] = useState("");
+  const [compradorWhatsapp, setCompradorWhatsapp] = useState("");
+  const [quantidade, setQuantidade] = useState<number | null>(null);
   const [tentouAbrirApp, setTentouAbrirApp] = useState(false);
 
-  // Quando o retorno abrir no navegador/PWA, tenta mandar para o APK instalado.
-  // Se não tiver APK instalado, continua normalmente no PWA.
+  // No Bolão10, tenta abrir o APK quando estiver no PWA.
+  // No Bonde 62, não tenta abrir o app do bolão.
   useEffect(() => {
     if (Platform.OS !== "web") return;
+    if (isBonde62) return;
 
     const timer = setTimeout(() => {
       setTentouAbrirApp(true);
@@ -96,11 +117,19 @@ export default function PagamentoRetornoScreen() {
     }, 900);
 
     return () => clearTimeout(timer);
-  }, [deepLinkApp]);
+  }, [deepLinkApp, isBonde62]);
 
   useEffect(() => {
     if (!orderNsu) {
       setStatusTela("pendente");
+
+      if (isBonde62) {
+        setMensagem(
+          "Pagamento enviado. Se o Pix foi aprovado, seu ingresso será confirmado em instantes."
+        );
+        return;
+      }
+
       setMensagem(
         "Pagamento enviado. Se o Pix foi aprovado, seu saldo será atualizado em instantes."
       );
@@ -119,7 +148,13 @@ export default function PagamentoRetornoScreen() {
       (snapshot) => {
         if (!snapshot.exists()) {
           setStatusTela("pendente");
-          setMensagem("Pagamento localizado. Aguardando confirmação...");
+
+          setMensagem(
+            isBonde62
+              ? "Pagamento localizado. Aguardando confirmação do ingresso..."
+              : "Pagamento localizado. Aguardando confirmação..."
+          );
+
           return;
         }
 
@@ -131,8 +166,32 @@ export default function PagamentoRetornoScreen() {
           setValorPago(valor);
         }
 
+        if (data.nome) {
+          setCompradorNome(String(data.nome));
+        }
+
+        if (data.email) {
+          setCompradorEmail(String(data.email));
+        }
+
+        if (data.whatsapp) {
+          setCompradorWhatsapp(String(data.whatsapp));
+        }
+
+        if (data.quantidade) {
+          setQuantidade(Number(data.quantidade));
+        }
+
         if (statusAprovado(status)) {
           setStatusTela("aprovado");
+
+          if (isBonde62) {
+            setMensagem(
+              "Pagamento aprovado! Seu ingresso do Bonde 62 está garantido. Salve essa tela e acompanhe as próximas informações pelo WhatsApp."
+            );
+            return;
+          }
+
           setMensagem("Pagamento aprovado! Seu saldo já está sendo atualizado.");
 
           setTimeout(() => {
@@ -144,32 +203,70 @@ export default function PagamentoRetornoScreen() {
 
         if (statusErro(status)) {
           setStatusTela("erro");
+
           setMensagem(
-            "Não conseguimos confirmar esse pagamento. Tente novamente ou confira seu extrato."
+            isBonde62
+              ? "Não conseguimos confirmar esse pagamento. Tente novamente ou fale com o suporte do Bonde 62."
+              : "Não conseguimos confirmar esse pagamento. Tente novamente ou confira seu extrato."
           );
+
           return;
         }
 
         setStatusTela("pendente");
+
         setMensagem(
-          "Pagamento recebido pela InfinitePay. Aguardando o webhook confirmar o saldo..."
+          isBonde62
+            ? "Pagamento recebido pela InfinitePay. Aguardando o webhook confirmar seu ingresso..."
+            : "Pagamento recebido pela InfinitePay. Aguardando o webhook confirmar o saldo..."
         );
       },
       (error) => {
         console.log("Erro ao acompanhar pagamento:", error);
         setStatusTela("pendente");
+
         setMensagem(
-          "Pagamento enviado. Se ele foi aprovado, seu saldo será atualizado em instantes."
+          isBonde62
+            ? "Pagamento enviado. Se ele foi aprovado, seu ingresso será confirmado em instantes."
+            : "Pagamento enviado. Se ele foi aprovado, seu saldo será atualizado em instantes."
         );
       }
     );
 
     return () => unsubscribe();
-  }, [orderNsu]);
+  }, [orderNsu, isBonde62]);
 
   const aprovado = statusTela === "aprovado";
   const erro = statusTela === "erro";
   const carregando = statusTela === "carregando" || statusTela === "pendente";
+
+  const tema = isBonde62
+    ? {
+        bg: "#050008",
+        header: "#120018",
+        headerText: "#ffd8ee",
+        primary: "#ff1684",
+        primaryDark: "#c90065",
+        card: "#120018",
+        cardBorder: "#ff1684",
+        soft: "#210027",
+        softBorder: "rgba(255, 22, 132, 0.35)",
+        text: "#ffffff",
+        muted: "#d7ccdf",
+      }
+    : {
+        bg: "#F3F6F4",
+        header: "#006B2E",
+        headerText: "#DFFFEA",
+        primary: "#006B2E",
+        primaryDark: "#005525",
+        card: "#FFFFFF",
+        cardBorder: "#FFFFFF",
+        soft: "#F1FFF5",
+        softBorder: "#BEE7C9",
+        text: "#111827",
+        muted: "#4B5563",
+      };
 
   async function abrirAplicativo() {
     try {
@@ -179,22 +276,42 @@ export default function PagamentoRetornoScreen() {
     }
   }
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#006B2E" />
+  function voltarPrincipal() {
+    router.replace(isBonde62 ? "/bonde62" : "/perfil");
+  }
 
-      <View style={styles.header}>
-        <Text style={styles.logo}>⚽ Bolão10</Text>
-        <Text style={styles.headerText}>Retorno do pagamento</Text>
+  return (
+    <SafeAreaView style={[styles.safe, { backgroundColor: tema.bg }]}>
+      <StatusBar barStyle="light-content" backgroundColor={tema.header} />
+
+      <View style={[styles.header, { backgroundColor: tema.header }]}>
+        <Text style={styles.logo}>
+          {isBonde62 ? "🔥 Bonde 62" : "⚽ Bolão10"}
+        </Text>
+
+        <Text style={[styles.headerText, { color: tema.headerText }]}>
+          {isBonde62 ? "Retorno do ingresso" : "Retorno do pagamento"}
+        </Text>
       </View>
 
       <View style={styles.container}>
-        <View style={styles.card}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: tema.card,
+              borderColor: isBonde62 ? tema.cardBorder : "transparent",
+              borderWidth: isBonde62 ? 1 : 0,
+            },
+          ]}
+        >
           <View
             style={[
               styles.iconCircle,
               aprovado && styles.iconCircleSuccess,
               erro && styles.iconCircleError,
+              isBonde62 && styles.iconCircleBonde,
+              aprovado && isBonde62 && styles.iconCircleBondeSuccess,
             ]}
           >
             <Text style={styles.iconText}>
@@ -202,20 +319,35 @@ export default function PagamentoRetornoScreen() {
             </Text>
           </View>
 
-          <Text style={styles.title}>
+          <Text style={[styles.title, { color: tema.text }]}>
             {aprovado
-              ? "Pagamento aprovado!"
+              ? isBonde62
+                ? "Ingresso confirmado!"
+                : "Pagamento aprovado!"
               : erro
               ? "Pagamento não confirmado"
+              : isBonde62
+              ? "Confirmando ingresso"
               : "Confirmando pagamento"}
           </Text>
 
-          <Text style={styles.message}>{mensagem}</Text>
+          <Text style={[styles.message, { color: tema.muted }]}>{mensagem}</Text>
 
           {valorPago !== null && (
-            <View style={styles.valueBox}>
-              <Text style={styles.valueLabel}>Valor do depósito</Text>
-              <Text style={styles.valueText}>
+            <View
+              style={[
+                styles.valueBox,
+                {
+                  backgroundColor: tema.soft,
+                  borderColor: tema.softBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.valueLabel, { color: tema.primary }]}>
+                {isBonde62 ? "Valor do ingresso" : "Valor do depósito"}
+              </Text>
+
+              <Text style={[styles.valueText, { color: tema.primary }]}>
                 {valorPago.toLocaleString("pt-BR", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -225,13 +357,59 @@ export default function PagamentoRetornoScreen() {
             </View>
           )}
 
-          {user?.email && (
+          {isBonde62 && (
+            <View
+              style={[
+                styles.ticketBox,
+                {
+                  backgroundColor: tema.soft,
+                  borderColor: tema.softBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.ticketTitle, { color: tema.primary }]}>
+                Dados do pedido
+              </Text>
+
+              {!!compradorNome && (
+                <Text style={[styles.ticketText, { color: tema.muted }]}>
+                  Nome: {compradorNome}
+                </Text>
+              )}
+
+              {!!compradorEmail && (
+                <Text style={[styles.ticketText, { color: tema.muted }]}>
+                  E-mail: {compradorEmail}
+                </Text>
+              )}
+
+              {!!compradorWhatsapp && (
+                <Text style={[styles.ticketText, { color: tema.muted }]}>
+                  WhatsApp: {compradorWhatsapp}
+                </Text>
+              )}
+
+              {quantidade !== null && (
+                <Text style={[styles.ticketText, { color: tema.muted }]}>
+                  Quantidade: {quantidade} ingresso(s)
+                </Text>
+              )}
+
+              {!!orderNsu && (
+                <Text style={[styles.ticketCode, { color: tema.primary }]}>
+                  Pedido: {orderNsu}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {!isBonde62 && user?.email && (
             <Text style={styles.userText}>Conta: {user.email}</Text>
           )}
 
-          {carregando && <ActivityIndicator color="#006B2E" size="large" />}
+          {carregando && <ActivityIndicator color={tema.primary} size="large" />}
 
-          {Platform.OS === "web" && (
+          {Platform.OS === "web" && !isBonde62 && (
             <View style={styles.appBox}>
               <Text style={styles.appBoxTitle}>Tem o APK instalado?</Text>
 
@@ -240,7 +418,10 @@ export default function PagamentoRetornoScreen() {
                 mensagem do navegador, toque em abrir.
               </Text>
 
-              <TouchableOpacity style={styles.openAppButton} onPress={abrirAplicativo}>
+              <TouchableOpacity
+                style={[styles.openAppButton, { backgroundColor: tema.primary }]}
+                onPress={abrirAplicativo}
+              >
                 <Text style={styles.openAppButtonText}>Abrir no aplicativo</Text>
               </TouchableOpacity>
 
@@ -254,22 +435,37 @@ export default function PagamentoRetornoScreen() {
           )}
 
           <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.replace("/perfil")}
+            style={[styles.primaryButton, { backgroundColor: tema.primary }]}
+            onPress={voltarPrincipal}
           >
-            <Text style={styles.primaryButtonText}>Voltar para meu perfil</Text>
+            <Text style={styles.primaryButtonText}>
+              {isBonde62 ? "Voltar para o Bonde 62" : "Voltar para meu perfil"}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.secondaryButton}
+            style={[
+              styles.secondaryButton,
+              {
+                borderColor: isBonde62 ? tema.softBorder : "#D1D5DB",
+              },
+            ]}
             onPress={() => router.replace("/")}
           >
-            <Text style={styles.secondaryButtonText}>Ir para início</Text>
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                { color: isBonde62 ? "#FFFFFF" : "#111827" },
+              ]}
+            >
+              Ir para início
+            </Text>
           </TouchableOpacity>
 
-          <Text style={styles.helpText}>
-            O saldo é confirmado pelo webhook da InfinitePay. Se ainda não
-            apareceu, aguarde alguns segundos e atualize o Perfil.
+          <Text style={[styles.helpText, { color: tema.muted }]}>
+            {isBonde62
+              ? "Seu ingresso é confirmado pelo webhook da InfinitePay. Se ainda não apareceu como confirmado, aguarde alguns segundos e atualize esta página."
+              : "O saldo é confirmado pelo webhook da InfinitePay. Se ainda não apareceu, aguarde alguns segundos e atualize o Perfil."}
           </Text>
         </View>
       </View>
@@ -280,11 +476,9 @@ export default function PagamentoRetornoScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F3F6F4",
   },
 
   header: {
-    backgroundColor: "#006B2E",
     paddingTop: 30,
     paddingBottom: 26,
     paddingHorizontal: 22,
@@ -300,7 +494,6 @@ const styles = StyleSheet.create({
   },
 
   headerText: {
-    color: "#DFFFEA",
     marginTop: 6,
     fontSize: 14,
     fontWeight: "700",
@@ -313,7 +506,6 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 26,
     padding: 24,
     alignItems: "center",
@@ -338,19 +530,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEE2E2",
   },
 
+  iconCircleBonde: {
+    backgroundColor: "#2A0034",
+    borderWidth: 1,
+    borderColor: "#ff1684",
+  },
+
+  iconCircleBondeSuccess: {
+    backgroundColor: "#151F12",
+    borderColor: "#22C55E",
+  },
+
   iconText: {
     fontSize: 42,
   },
 
   title: {
-    color: "#111827",
     fontSize: 24,
     fontWeight: "900",
     textAlign: "center",
   },
 
   message: {
-    color: "#4B5563",
     fontSize: 15,
     fontWeight: "700",
     textAlign: "center",
@@ -361,9 +562,7 @@ const styles = StyleSheet.create({
 
   valueBox: {
     width: "100%",
-    backgroundColor: "#F1FFF5",
     borderWidth: 1,
-    borderColor: "#BEE7C9",
     borderRadius: 18,
     padding: 16,
     alignItems: "center",
@@ -371,16 +570,42 @@ const styles = StyleSheet.create({
   },
 
   valueLabel: {
-    color: "#006B2E",
     fontSize: 13,
     fontWeight: "800",
   },
 
   valueText: {
-    color: "#006B2E",
     fontSize: 28,
     fontWeight: "900",
     marginTop: 4,
+  },
+
+  ticketBox: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+  },
+
+  ticketTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+
+  ticketText: {
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+
+  ticketCode: {
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
+    marginTop: 12,
   },
 
   userText: {
@@ -418,7 +643,6 @@ const styles = StyleSheet.create({
   },
 
   openAppButton: {
-    backgroundColor: "#006B2E",
     borderRadius: 15,
     paddingVertical: 13,
     alignItems: "center",
@@ -441,7 +665,6 @@ const styles = StyleSheet.create({
   },
 
   primaryButton: {
-    backgroundColor: "#006B2E",
     borderRadius: 18,
     paddingVertical: 16,
     paddingHorizontal: 22,
@@ -464,17 +687,14 @@ const styles = StyleSheet.create({
     width: "100%",
     marginTop: 10,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
   },
 
   secondaryButtonText: {
-    color: "#111827",
     fontSize: 15,
     fontWeight: "900",
   },
 
   helpText: {
-    color: "#6B7280",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center",
