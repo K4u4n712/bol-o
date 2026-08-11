@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Linking,
   Modal,
   ScrollView,
@@ -13,8 +14,8 @@ import {
 } from "react-native";
 
 const SEU_NUMERO_WHATSAPP = "5562999999999"; // TROQUE PELO SEU NÚMERO
-const API_CREATE_CHECKOUT_URL =
-  "https://bol-o-rouge.vercel.app/api/create-checkout";
+const API_CREATE_PIX_URL =
+  "https://bol-o-rouge.vercel.app/api/create-pix";
 
 const PRECO_LOTE_SECRETO = 1;
 const TEMPO_PROMO_SEGUNDOS = 15 * 60;
@@ -32,6 +33,12 @@ export default function Bonde62() {
   const [modalAberto, setModalAberto] = useState(true);
   const [toast, setToast] = useState("Lote secreto liberado por tempo limitado.");
   const [comprando, setComprando] = useState(false);
+
+  const [pixAberto, setPixAberto] = useState(false);
+  const [pixCopiaCola, setPixCopiaCola] = useState("");
+  const [pixQrCode, setPixQrCode] = useState("");
+  const [pixPaymentId, setPixPaymentId] = useState("");
+  const [pixStatus, setPixStatus] = useState("pending");
 
   const mensagens = [
     "Algumas pessoas estão vendo o Lote Secreto agora.",
@@ -112,7 +119,7 @@ export default function Bonde62() {
     try {
       setComprando(true);
 
-      const response = await fetch(API_CREATE_CHECKOUT_URL, {
+      const response = await fetch(API_CREATE_PIX_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -130,27 +137,53 @@ export default function Bonde62() {
 
       const data = await response.json();
 
-      if (!response.ok || !data.success || !data.url) {
-        console.log("Erro checkout Bonde 62:", data);
+      console.log("Resposta Mercado Pago:", data);
+
+      if (!response.ok || !data.success || !data.qr_code) {
+        console.log("Erro Pix Bonde 62:", data);
 
         Alert.alert(
-          "Erro ao gerar pagamento",
-          data?.message || "Não foi possível criar o pagamento agora."
+          "Erro ao gerar Pix",
+          data?.message || "Não foi possível gerar o pagamento agora."
         );
-
         return;
       }
 
-      await Linking.openURL(data.url);
+      setPixCopiaCola(data.qr_code);
+      setPixQrCode(data.qr_code_base64 || "");
+      setPixPaymentId(data.payment_id || "");
+      setPixStatus(data.status || "pending");
+      setPixAberto(true);
     } catch (error) {
-      console.log("Erro ao comprar ingresso Bonde 62:", error);
+      console.log("Erro ao gerar Pix Bonde 62:", error);
 
       Alert.alert(
-        "Erro ao abrir pagamento",
-        "Não foi possível abrir o pagamento. Tente novamente em alguns segundos."
+        "Erro ao gerar Pix",
+        "Não foi possível gerar o pagamento. Tente novamente em alguns segundos."
       );
     } finally {
       setComprando(false);
+    }
+  }
+
+  async function copiarPix() {
+    if (!pixCopiaCola) return;
+
+    try {
+      const nav = globalThis as any;
+      if (nav?.navigator?.clipboard?.writeText) {
+        await nav.navigator.clipboard.writeText(pixCopiaCola);
+        Alert.alert(
+          "Pix copiado",
+          "Código Pix copiado para a área de transferência."
+        );
+        return;
+      }
+
+      Alert.alert("Copie o código Pix", pixCopiaCola);
+    } catch (error) {
+      console.log("Erro ao copiar Pix:", error);
+      Alert.alert("Copie o código Pix", pixCopiaCola);
     }
   }
 
@@ -473,6 +506,68 @@ export default function Bonde62() {
 
             <TouchableOpacity onPress={() => setModalAberto(false)}>
               <Text style={styles.modalClose}>continuar vendo o site</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={pixAberto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPixAberto(false)}
+      >
+        <View style={styles.pixOverlay}>
+          <View style={styles.pixBox}>
+            <Text style={styles.pixKicker}>PAGAMENTO VIA PIX</Text>
+
+            <Text style={styles.pixTitle}>Finalize seu ingresso</Text>
+
+            <Text style={styles.pixValor}>{formatarMoeda(total)}</Text>
+
+            <Text style={styles.pixDescricao}>
+              Escaneie o QR Code abaixo ou use o Pix Copia e Cola.
+            </Text>
+
+            {pixQrCode ? (
+              <View style={styles.qrContainer}>
+                <Image
+                  source={{ uri: `data:image/png;base64,${pixQrCode}` }}
+                  style={styles.qrImage}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.pixStatusBox}>
+              <Text style={styles.pixAguardando}>
+                {pixStatus === "approved"
+                  ? "✅ Pagamento aprovado!"
+                  : "⏳ Aguardando pagamento..."}
+              </Text>
+            </View>
+
+            <View style={styles.pixCodeBox}>
+              <Text style={styles.pixCode} numberOfLines={4}>
+                {pixCopiaCola}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.pixCopyButton}
+              onPress={copiarPix}
+            >
+              <Text style={styles.pixCopyButtonText}>📋 COPIAR PIX</Text>
+            </TouchableOpacity>
+
+            {pixPaymentId ? (
+              <Text style={styles.pixPaymentId}>
+                Pagamento: {pixPaymentId}
+              </Text>
+            ) : null}
+
+            <TouchableOpacity onPress={() => setPixAberto(false)}>
+              <Text style={styles.pixClose}>fechar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1441,4 +1536,121 @@ const styles = StyleSheet.create({
     marginTop: 14,
     textDecorationLine: "underline",
   },
+
+  pixOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.88)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+
+  pixBox: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#120018",
+    borderColor: "#ff1684",
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 26,
+    alignItems: "center",
+  },
+
+  pixKicker: {
+    color: "#ff1684",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+
+  pixTitle: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "900",
+    marginTop: 8,
+    textAlign: "center",
+  },
+
+  pixValor: {
+    color: "#ff1684",
+    fontSize: 36,
+    fontWeight: "900",
+    marginTop: 10,
+  },
+
+  pixDescricao: {
+    color: "#d7ccdf",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 18,
+    lineHeight: 21,
+  },
+
+  qrContainer: {
+    backgroundColor: "#fff",
+    padding: 14,
+    borderRadius: 18,
+  },
+
+  qrImage: {
+    width: 230,
+    height: 230,
+  },
+
+  pixStatusBox: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,22,132,0.10)",
+    borderColor: "rgba(255,22,132,0.35)",
+    borderWidth: 1,
+  },
+
+  pixAguardando: {
+    color: "#fff",
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  pixCodeBox: {
+    width: "100%",
+    backgroundColor: "#22052d",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+  },
+
+  pixCode: {
+    color: "#d8cde0",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  pixCopyButton: {
+    width: "100%",
+    backgroundColor: "#ff1684",
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 14,
+  },
+
+  pixCopyButtonText: {
+    color: "#fff",
+    fontWeight: "900",
+  },
+
+  pixPaymentId: {
+    color: "#766b7f",
+    fontSize: 10,
+    marginTop: 14,
+  },
+
+  pixClose: {
+    color: "#bfaec9",
+    textDecorationLine: "underline",
+    marginTop: 14,
+  },
+
 });
