@@ -2,7 +2,6 @@ const crypto = require("crypto");
 const { db, admin } = require("../lib/firebaseAdmin");
 
 const PRECO_BONDE62_LOTE_SECRETO = 1;
-const PUBLIC_BASE_URL = "https://bol-o-rouge.vercel.app";
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -26,21 +25,12 @@ module.exports = async function handler(req, res) {
     if (!accessToken) {
       return res.status(500).json({
         success: false,
-        message: "MERCADO_PAGO_ACCESS_TOKEN não configurado na Vercel.",
+        message: "MERCADO_PAGO_ACCESS_TOKEN não configurado.",
       });
     }
 
-    const body =
-      typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-
-    const {
-      nome,
-      email,
-      whatsapp,
-      quantidade,
-      evento,
-      lote,
-    } = body || {};
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const { nome, email, whatsapp, quantidade, evento, lote } = body || {};
 
     if (!nome || !email || !whatsapp) {
       return res.status(400).json({
@@ -50,10 +40,8 @@ module.exports = async function handler(req, res) {
     }
 
     let qtd = Number(quantidade || 1);
-
-    if (!qtd || qtd < 1) {
-      qtd = 1;
-    }
+    if (!Number.isFinite(qtd) || qtd < 1) qtd = 1;
+    qtd = Math.floor(qtd);
 
     if (qtd > 10) {
       return res.status(400).json({
@@ -62,9 +50,8 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const valorNumber = Number(
-      (qtd * PRECO_BONDE62_LOTE_SECRETO).toFixed(2)
-    );
+    const valorNumber = Number((qtd * PRECO_BONDE62_LOTE_SECRETO).toFixed(2));
+    const valorString = valorNumber.toFixed(2);
 
     const pagamentoRef = db.collection("pagamentos").doc();
     const orderNsu = pagamentoRef.id;
@@ -79,21 +66,17 @@ module.exports = async function handler(req, res) {
       evento: evento || "bonde62",
       lote: lote || "lote_secreto",
       quantidade: qtd,
-
       nome: nome.trim(),
       email: email.trim(),
       whatsapp: whatsapp.trim(),
-
+      descricao,
       valorReais: valorNumber,
       valorCentavos: Math.round(valorNumber * 100),
-
-      status: "pending",
+      status: "creating",
       ingressoStatus: "pending",
-
       order_nsu: orderNsu,
-
       provedorPagamento: "mercadopago",
-
+      mercadoPagoApi: "orders",
       criadoEm: admin.firestore.FieldValue.serverTimestamp(),
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -101,44 +84,36 @@ module.exports = async function handler(req, res) {
     const idempotencyKey = crypto.randomUUID();
 
     const payloadMercadoPago = {
-      transaction_amount: valorNumber,
-      description: descricao,
-      payment_method_id: "pix",
-
+      type: "online",
+      total_amount: valorString,
       external_reference: orderNsu,
-
-      notification_url:
-        `${PUBLIC_BASE_URL}/api/webhook-mercadopago`,
-
+      processing_mode: "automatic",
+      transactions: {
+        payments: [
+          {
+            amount: valorString,
+            payment_method: {
+              id: "pix",
+              type: "bank_transfer",
+            },
+          },
+        ],
+      },
       payer: {
         email: email.trim(),
-        first_name: nome.trim(),
-      },
-
-      metadata: {
-        order_nsu: orderNsu,
-        tipo: "bonde62_ingresso",
-        evento: "bonde62",
-        lote: lote || "lote_secreto",
-        quantidade: qtd,
-        whatsapp: whatsapp.trim(),
       },
     };
 
-    const mpResponse = await fetch(
-      "https://api.mercadopago.com/v1/payments",
-      {
-        method: "POST",
-
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "X-Idempotency-Key": idempotencyKey,
-        },
-
-        body: JSON.stringify(payloadMercadoPago),
-      }
-    );
+    const mpResponse = await fetch("https://api.mercadopago.com/v1/orders", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(payloadMercadoPago),
+    });
 
     const mpData = await mpResponse.json();
 
@@ -146,8 +121,7 @@ module.exports = async function handler(req, res) {
       await pagamentoRef.update({
         status: "checkout_error",
         erroMercadoPago: mpData,
-        atualizadoEm:
-          admin.firestore.FieldValue.serverTimestamp(),
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       return res.status(mpResponse.status).json({
@@ -157,19 +131,27 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const transactionData =
-      mpData?.point_of_interaction?.transaction_data || {};
+    const payment = mpData?.transactions?.payments?.[0] || {};
+    const paymentMethod = payment?.payment_method || {};
 
-    const qrCode = transactionData.qr_code || null;
-    const qrCodeBase64 = transactionData.qr_code_base64 || null;
-    const ticketUrl = transactionData.ticket_url || null;
+    const qrCode = paymentMethod.qr_code || null;
+    const qrCodeBase64 = paymentMethod.qr_code_base64 || null;
+    const ticketUrl = paymentMethod.ticket_url || null;
+
+    const orderId = mpData?.id ? String(mpData.id) : null;
+    const paymentId = payment?.id ? String(payment.id) : null;
+
+    const orderStatus = mpData?.status || "action_required";
+    const orderStatusDetail =
+      mpData?.status_detail || payment?.status_detail || "waiting_transfer";
 
     if (!qrCode) {
       await pagamentoRef.update({
         status: "pix_error",
+        mercadoPagoOrderId: orderId,
+        mercadoPagoPaymentId: paymentId,
         respostaMercadoPago: mpData,
-        atualizadoEm:
-          admin.firestore.FieldValue.serverTimestamp(),
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       return res.status(400).json({
@@ -180,38 +162,32 @@ module.exports = async function handler(req, res) {
     }
 
     await pagamentoRef.update({
-      mercadoPagoPaymentId: String(mpData.id),
-
-      status: mpData.status || "pending",
-
+      mercadoPagoOrderId: orderId,
+      mercadoPagoPaymentId: paymentId,
+      status: orderStatus,
+      statusDetail: orderStatusDetail,
       qrCode,
       qrCodeBase64,
       ticketUrl,
-
       payloadMercadoPago,
       respostaMercadoPago: mpData,
-
-      atualizadoEm:
-        admin.firestore.FieldValue.serverTimestamp(),
+      atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     return res.status(200).json({
       success: true,
-
       order_nsu: orderNsu,
-
-      payment_id: String(mpData.id),
-
-      status: mpData.status,
-
+      payment_id: paymentId || orderId,
+      order_id: orderId,
+      status: orderStatus,
+      status_detail: orderStatusDetail,
       valor: valorNumber,
-
       qr_code: qrCode,
       qr_code_base64: qrCodeBase64,
       ticket_url: ticketUrl,
     });
   } catch (error) {
-    console.error("Erro ao criar Pix Mercado Pago:", error);
+    console.error("Erro ao criar Pix Mercado Pago Orders:", error);
 
     return res.status(500).json({
       success: false,
