@@ -1,7 +1,5 @@
 const { db, admin } = require("../lib/firebaseAdmin");
 
-const FieldValue = admin.firestore.FieldValue;
-
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -40,6 +38,8 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const FieldValue = admin.firestore.FieldValue;
+
     const body =
       typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
 
