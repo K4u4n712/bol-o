@@ -14,6 +14,8 @@ import {
   View,
 } from "react-native";
 
+import Bonde62Analytics from "../components/Bonde62Analytics";
+
 const SEU_NUMERO_WHATSAPP = "5562999999999"; // TROQUE PELO SEU NÚMERO
 const API_CREATE_PIX_URL =
   "https://bol-o-rouge.vercel.app/api/create-pix";
@@ -264,6 +266,7 @@ export default function Bonde62() {
 
   return (
     <>
+      <Bonde62Analytics />
       <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
         <View style={styles.topUrgencyBar}>
           <Text style={styles.topUrgencyText}>
