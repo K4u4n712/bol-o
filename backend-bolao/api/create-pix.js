@@ -3,6 +3,12 @@ const { db, admin } = require("../lib/firebaseAdmin");
 
 const PRECO_BONDE62_LOTE_SECRETO = 1;
 
+// Dados predefinidos pelo Mercado Pago para teste de Pix via API Orders.
+// Em produção, estes dados devem voltar a vir do comprador real.
+const TESTE_PIX_MERCADO_PAGO = true;
+const TESTE_EMAIL = "test_user_br@testuser.com";
+const TESTE_FIRST_NAME = "APRO";
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -88,15 +94,19 @@ module.exports = async function handler(req, res) {
         ? "Ingresso Bonde 62 - Lote Secreto"
         : `${qtd} ingressos Bonde 62 - Lote Secreto`;
 
+    const nomeComprador = String(nome).trim();
+    const emailComprador = String(email).trim();
+    const whatsappComprador = String(whatsapp).trim();
+
     await pagamentoRef.set({
       tipo: "bonde62_ingresso",
       evento: evento || "bonde62",
       lote: lote || "lote_secreto",
       quantidade: qtd,
 
-      nome: String(nome).trim(),
-      email: String(email).trim(),
-      whatsapp: String(whatsapp).trim(),
+      nome: nomeComprador,
+      email: emailComprador,
+      whatsapp: whatsappComprador,
 
       descricao,
 
@@ -110,6 +120,7 @@ module.exports = async function handler(req, res) {
 
       provedorPagamento: "mercadopago",
       mercadoPagoApi: "orders",
+      ambienteMercadoPago: TESTE_PIX_MERCADO_PAGO ? "teste" : "producao",
 
       criadoEm: admin.firestore.FieldValue.serverTimestamp(),
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
@@ -117,15 +128,28 @@ module.exports = async function handler(req, res) {
 
     const idempotencyKey = crypto.randomUUID();
 
+    // Para o teste oficial de Pix do Mercado Pago:
+    // payer.email = test_user_br@testuser.com
+    // payer.first_name = APRO
+    // O Mercado Pago cria a order como action_required e depois
+    // atualiza automaticamente o pagamento para aprovado.
+    const payer = TESTE_PIX_MERCADO_PAGO
+      ? {
+          email: TESTE_EMAIL,
+          first_name: TESTE_FIRST_NAME,
+        }
+      : {
+          email: emailComprador,
+          first_name: nomeComprador,
+        };
+
     const payloadMercadoPago = {
       type: "online",
       processing_mode: "automatic",
       external_reference: orderNsu,
       total_amount: valorMercadoPago,
 
-      payer: {
-        email: String(email).trim(),
-      },
+      payer,
 
       transactions: {
         payments: [
@@ -140,6 +164,13 @@ module.exports = async function handler(req, res) {
         ],
       },
     };
+
+    console.log("Criando Pix via Mercado Pago Orders:", {
+      orderNsu,
+      valor: valorMercadoPago,
+      ambiente: TESTE_PIX_MERCADO_PAGO ? "teste" : "producao",
+      payer,
+    });
 
     const mpResponse = await fetch(
       "https://api.mercadopago.com/v1/orders",
@@ -168,6 +199,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (!mpResponse.ok) {
+      console.error("Erro Mercado Pago Orders:", mpData);
+
       await pagamentoRef.update({
         status: "checkout_error",
         erroMercadoPago: mpData,
@@ -213,6 +246,11 @@ module.exports = async function handler(req, res) {
       pagamentoMercadoPago?.status_detail || statusDetailOrder;
 
     if (!qrCode) {
+      console.error(
+        "Order criada, mas o Mercado Pago não retornou QR Code:",
+        mpData
+      );
+
       await pagamentoRef.update({
         status: "pix_error",
         mercadoPagoOrderId,
@@ -254,6 +292,8 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+
+      teste: TESTE_PIX_MERCADO_PAGO,
 
       order_nsu: orderNsu,
       order_id: mercadoPagoOrderId,
