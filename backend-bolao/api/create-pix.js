@@ -9,6 +9,80 @@ const TESTE_PIX_MERCADO_PAGO = true;
 const TESTE_EMAIL = "test_user_br@testuser.com";
 const TESTE_FIRST_NAME = "APRO";
 
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extrairDadosPix(orderData) {
+  const pagamento = orderData?.transactions?.payments?.[0] || {};
+  const paymentMethod = pagamento?.payment_method || {};
+
+  const orderStatus = orderData?.status || "";
+  const orderStatusDetail = orderData?.status_detail || "";
+
+  const paymentStatus = pagamento?.status || orderStatus || "pending";
+  const paymentStatusDetail =
+    pagamento?.status_detail || orderStatusDetail || "";
+
+  const approved =
+    paymentStatus === "approved" ||
+    orderStatus === "approved" ||
+    paymentStatusDetail === "accredited" ||
+    orderStatusDetail === "accredited";
+
+  return {
+    pagamento,
+    paymentMethod,
+
+    orderId: orderData?.id ? String(orderData.id) : null,
+    paymentId: pagamento?.id ? String(pagamento.id) : null,
+
+    orderStatus: orderStatus || "pending",
+    orderStatusDetail: orderStatusDetail || "",
+
+    paymentStatus,
+    paymentStatusDetail,
+
+    approved,
+
+    qrCode: paymentMethod?.qr_code || null,
+    qrCodeBase64: paymentMethod?.qr_code_base64 || null,
+    ticketUrl: paymentMethod?.ticket_url || null,
+  };
+}
+
+async function consultarOrderMercadoPago(orderId, accessToken) {
+  const response = await fetch(
+    `https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`,
+    {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  const raw = await response.text();
+
+  let data;
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = {
+      message: "Resposta inválida ao consultar a order.",
+      raw,
+    };
+  }
+
+  return {
+    ok: response.ok,
+    statusCode: response.status,
+    data,
+  };
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -42,7 +116,7 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({
         success: false,
         message:
-          "O Access Token configurado não é o token da nova aplicação Checkout Transparente via API Orders.",
+          "O Access Token configurado não é o token da aplicação Checkout Transparente via API Orders.",
       });
     }
 
@@ -120,7 +194,9 @@ module.exports = async function handler(req, res) {
 
       provedorPagamento: "mercadopago",
       mercadoPagoApi: "orders",
-      ambienteMercadoPago: TESTE_PIX_MERCADO_PAGO ? "teste" : "producao",
+      ambienteMercadoPago: TESTE_PIX_MERCADO_PAGO
+        ? "teste"
+        : "producao",
 
       criadoEm: admin.firestore.FieldValue.serverTimestamp(),
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
@@ -128,11 +204,6 @@ module.exports = async function handler(req, res) {
 
     const idempotencyKey = crypto.randomUUID();
 
-    // Para o teste oficial de Pix do Mercado Pago:
-    // payer.email = test_user_br@testuser.com
-    // payer.first_name = APRO
-    // O Mercado Pago cria a order como action_required e depois
-    // atualiza automaticamente o pagamento para aprovado.
     const payer = TESTE_PIX_MERCADO_PAGO
       ? {
           email: TESTE_EMAIL,
@@ -168,7 +239,9 @@ module.exports = async function handler(req, res) {
     console.log("Criando Pix via Mercado Pago Orders:", {
       orderNsu,
       valor: valorMercadoPago,
-      ambiente: TESTE_PIX_MERCADO_PAGO ? "teste" : "producao",
+      ambiente: TESTE_PIX_MERCADO_PAGO
+        ? "teste"
+        : "producao",
       payer,
     });
 
@@ -189,6 +262,7 @@ module.exports = async function handler(req, res) {
     const raw = await mpResponse.text();
 
     let mpData;
+
     try {
       mpData = raw ? JSON.parse(raw) : {};
     } catch {
@@ -215,81 +289,125 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const pagamentoMercadoPago =
-      mpData?.transactions?.payments?.[0] || {};
+    /*
+      IMPORTANTE:
+      A API Orders pode criar a order e ainda não devolver todos os
+      dados da transação imediatamente.
 
-    const paymentMethod =
-      pagamentoMercadoPago?.payment_method || {};
+      Antes, este arquivo devolvia erro 400 se qr_code viesse vazio.
+      Agora, quando isso acontecer, consultamos GET /v1/orders/{id}
+      por alguns segundos para buscar a versão atualizada da order.
+    */
 
-    const qrCode = paymentMethod.qr_code || null;
-    const qrCodeBase64 = paymentMethod.qr_code_base64 || null;
-    const ticketUrl = paymentMethod.ticket_url || null;
+    let orderFinal = mpData;
+    let dadosPix = extrairDadosPix(orderFinal);
 
-    const mercadoPagoOrderId = mpData?.id
-      ? String(mpData.id)
-      : null;
-
-    const mercadoPagoPaymentId = pagamentoMercadoPago?.id
-      ? String(pagamentoMercadoPago.id)
-      : null;
-
-    const statusOrder =
-      mpData?.status || "action_required";
-
-    const statusDetailOrder =
-      mpData?.status_detail || "waiting_transfer";
-
-    const statusPagamento =
-      pagamentoMercadoPago?.status || statusOrder;
-
-    const statusDetailPagamento =
-      pagamentoMercadoPago?.status_detail || statusDetailOrder;
-
-    if (!qrCode) {
-      console.error(
-        "Order criada, mas o Mercado Pago não retornou QR Code:",
-        mpData
+    if (!dadosPix.qrCode && dadosPix.orderId && !dadosPix.approved) {
+      console.log(
+        "Order criada sem QR imediato. Consultando order atualizada:",
+        dadosPix.orderId
       );
 
-      await pagamentoRef.update({
-        status: "pix_error",
-        mercadoPagoOrderId,
-        mercadoPagoPaymentId,
-        respostaMercadoPago: mpData,
-        payloadMercadoPago,
-        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      // Até ~7 segundos de espera no máximo.
+      for (let tentativa = 1; tentativa <= 10; tentativa++) {
+        await esperar(700);
 
-      return res.status(400).json({
-        success: false,
-        message:
-          "A order foi criada, mas o Mercado Pago não retornou o código Pix.",
-        details: mpData,
-      });
+        const consulta = await consultarOrderMercadoPago(
+          dadosPix.orderId,
+          accessToken
+        );
+
+        if (!consulta.ok) {
+          console.log(
+            `Consulta ${tentativa}/10 falhou:`,
+            consulta.statusCode,
+            consulta.data
+          );
+          continue;
+        }
+
+        orderFinal = consulta.data;
+        dadosPix = extrairDadosPix(orderFinal);
+
+        console.log(`Consulta ${tentativa}/10:`, {
+          orderStatus: dadosPix.orderStatus,
+          paymentStatus: dadosPix.paymentStatus,
+          temQrCode: Boolean(dadosPix.qrCode),
+          approved: dadosPix.approved,
+        });
+
+        // Se o QR apareceu, já podemos retornar.
+        if (dadosPix.qrCode) {
+          break;
+        }
+
+        // No teste APRO, pode aprovar tão rápido que nem precisamos do QR.
+        if (dadosPix.approved) {
+          break;
+        }
+      }
     }
+
+    const {
+      orderId: mercadoPagoOrderId,
+      paymentId: mercadoPagoPaymentId,
+      orderStatus: statusOrder,
+      orderStatusDetail: statusDetailOrder,
+      paymentStatus: statusPagamento,
+      paymentStatusDetail: statusDetailPagamento,
+      approved,
+      qrCode,
+      qrCodeBase64,
+      ticketUrl,
+    } = dadosPix;
 
     await pagamentoRef.update({
       mercadoPagoOrderId,
       mercadoPagoPaymentId,
 
-      status: statusPagamento,
-      statusDetail: statusDetailPagamento,
+      status: approved
+        ? "approved"
+        : statusPagamento || statusOrder || "pending",
+
+      statusDetail:
+        statusDetailPagamento || statusDetailOrder || null,
+
+      ingressoStatus: approved
+        ? "confirmed"
+        : "pending",
 
       mercadoPagoOrderStatus: statusOrder,
-      mercadoPagoOrderStatusDetail: statusDetailOrder,
+      mercadoPagoOrderStatusDetail:
+        statusDetailOrder || null,
 
-      qrCode,
-      qrCodeBase64,
-      ticketUrl,
+      mercadoPagoPaymentStatus:
+        statusPagamento || null,
+
+      qrCode: qrCode || null,
+      qrCodeBase64: qrCodeBase64 || null,
+      ticketUrl: ticketUrl || null,
 
       idempotencyKey,
 
       payloadMercadoPago,
-      respostaMercadoPago: mpData,
+      respostaMercadoPago: orderFinal,
 
-      atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      ...(approved
+        ? {
+            aprovadoEm:
+              admin.firestore.FieldValue.serverTimestamp(),
+          }
+        : {}),
+
+      atualizadoEm:
+        admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    /*
+      Não devolvemos mais erro 400 simplesmente porque o QR ainda não
+      chegou. Se a order existe, o frontend recebe order_id e pode usar
+      o check-pix.js para continuar consultando o status.
+    */
     return res.status(200).json({
       success: true,
 
@@ -301,17 +419,31 @@ module.exports = async function handler(req, res) {
       payment_id:
         mercadoPagoPaymentId || mercadoPagoOrderId,
 
-      status: statusPagamento,
-      status_detail: statusDetailPagamento,
+      approved,
+
+      status: approved
+        ? "approved"
+        : statusPagamento || statusOrder || "pending",
+
+      status_detail:
+        statusDetailPagamento ||
+        statusDetailOrder ||
+        "",
 
       valor: valorNumber,
 
-      qr_code: qrCode,
-      qr_code_base64: qrCodeBase64,
-      ticket_url: ticketUrl,
+      qr_code: qrCode || "",
+      qr_code_base64: qrCodeBase64 || "",
+      ticket_url: ticketUrl || "",
+
+      // Ajuda a identificar no console quando a order ainda está atualizando.
+      processing: !qrCode && !approved,
     });
   } catch (error) {
-    console.error("Erro ao criar Pix Mercado Pago Orders:", error);
+    console.error(
+      "Erro ao criar Pix Mercado Pago Orders:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
