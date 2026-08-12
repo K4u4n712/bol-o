@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import QRCode from "react-native-qrcode-svg";
 
 const SEU_NUMERO_WHATSAPP = "5562999999999"; // TROQUE PELO SEU NÚMERO
 const API_CREATE_PIX_URL =
@@ -586,9 +587,32 @@ export default function Bonde62() {
                     </Text>
                     <Text style={styles.ticketSub}>O BAILE • GOIÂNIA</Text>
                   </View>
+
                   <View style={styles.validBadge}>
-                    <Text style={styles.validBadgeText}>VÁLIDO</Text>
+                    <Text style={styles.validBadgeText}>✓ VÁLIDO</Text>
                   </View>
+                </View>
+
+                <View style={styles.ticketDivider} />
+
+                <View style={styles.ticketQrArea}>
+                  <View style={styles.ticketQrBox}>
+                    <QRCode
+                      value={
+                        pixOrderNsu
+                          ? `BONDE62:${pixOrderNsu}`
+                          : `BONDE62:${pixOrderId || pixPaymentId || "CONFIRMADO"}`
+                      }
+                      size={178}
+                      backgroundColor="#ffffff"
+                      color="#09000e"
+                    />
+                  </View>
+
+                  <Text style={styles.ticketQrTitle}>SEU INGRESSO</Text>
+                  <Text style={styles.ticketQrHint}>
+                    Apresente este QR Code na entrada.
+                  </Text>
                 </View>
 
                 <View style={styles.ticketDivider} />
@@ -598,21 +622,44 @@ export default function Bonde62() {
 
                 <View style={styles.ticketRow}>
                   <View style={styles.ticketRowItem}>
+                    <Text style={styles.ticketLabel}>LOTE</Text>
+                    <Text style={styles.ticketValue}>LOTE SECRETO</Text>
+                  </View>
+
+                  <View style={styles.ticketRowItem}>
                     <Text style={styles.ticketLabel}>QUANTIDADE</Text>
                     <Text style={styles.ticketValue}>{qtd}</Text>
                   </View>
+                </View>
+
+                <View style={styles.ticketRow}>
                   <View style={styles.ticketRowItem}>
                     <Text style={styles.ticketLabel}>VALOR</Text>
                     <Text style={styles.ticketValue}>{formatarMoeda(total)}</Text>
+                  </View>
+
+                  <View style={styles.ticketRowItem}>
+                    <Text style={styles.ticketLabel}>STATUS</Text>
+                    <Text style={styles.ticketStatusText}>CONFIRMADO</Text>
                   </View>
                 </View>
 
                 <Text style={styles.ticketLabel}>CÓDIGO DO INGRESSO</Text>
                 <Text style={styles.ticketCode}>
-                  {pixOrderNsu ? `B62-${pixOrderNsu.slice(0, 10).toUpperCase()}` : "B62-CONFIRMADO"}
+                  {pixOrderNsu
+                    ? `B62-${pixOrderNsu.slice(0, 10).toUpperCase()}`
+                    : "B62-CONFIRMADO"}
                 </Text>
 
                 <Text style={styles.ticketEmail}>{email}</Text>
+
+                <View style={styles.ticketSecurityBox}>
+                  <Text style={styles.ticketSecurityTitle}>🔒 INGRESSO DE USO ÚNICO</Text>
+                  <Text style={styles.ticketSecurityText}>
+                    Este QR Code será validado na entrada. Após o primeiro uso,
+                    o ingresso ficará marcado como utilizado.
+                  </Text>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -1914,6 +1961,67 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "900",
     fontSize: 14,
+  },
+
+
+  ticketQrArea: {
+    width: "100%",
+    alignItems: "center",
+  },
+
+  ticketQrBox: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  ticketQrTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    marginTop: 14,
+    letterSpacing: 1,
+  },
+
+  ticketQrHint: {
+    color: "#bfaec9",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 5,
+  },
+
+  ticketStatusText: {
+    color: "#18c96e",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 4,
+  },
+
+  ticketSecurityBox: {
+    marginTop: 18,
+    backgroundColor: "rgba(255,22,132,0.08)",
+    borderColor: "rgba(255,22,132,0.32)",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 13,
+  },
+
+  ticketSecurityTitle: {
+    color: "#ff1684",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+
+  ticketSecurityText: {
+    color: "#cfc5d6",
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+    marginTop: 6,
   },
 
 });
