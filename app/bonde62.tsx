@@ -44,6 +44,7 @@ export default function Bonde62() {
   const [pixOrderNsu, setPixOrderNsu] = useState("");
   const [pixStatus, setPixStatus] = useState("pending");
   const [pagamentoAprovado, setPagamentoAprovado] = useState(false);
+  const [ingressoQrBase64, setIngressoQrBase64] = useState("");
 
   const mensagens = [
     "Algumas pessoas estão vendo o Lote Secreto agora.",
@@ -96,6 +97,10 @@ export default function Bonde62() {
 
         if (data?.status) {
           setPixStatus(data.status);
+        }
+
+        if (data?.ticket_qr_base64) {
+          setIngressoQrBase64(data.ticket_qr_base64);
         }
 
         if (data?.approved) {
@@ -201,6 +206,7 @@ export default function Bonde62() {
       setPixOrderNsu(data.order_nsu || "");
       setPixStatus(data.status || "pending");
       setPagamentoAprovado(false);
+      setIngressoQrBase64("");
       setPixAberto(true);
     } catch (error) {
       console.log("Erro ao gerar Pix Bonde 62:", error);
@@ -593,6 +599,23 @@ export default function Bonde62() {
 
                 <View style={styles.ticketDivider} />
 
+                {ingressoQrBase64 ? (
+                  <View style={styles.ingressoQrSection}>
+                    <View style={styles.ingressoQrBox}>
+                      <Image
+                        source={{ uri: ingressoQrBase64 }}
+                        style={styles.ingressoQrImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+
+                    <Text style={styles.ingressoQrTitle}>QR CODE DO INGRESSO</Text>
+                    <Text style={styles.ingressoQrHint}>
+                      Apresente este QR Code na entrada do evento.
+                    </Text>
+                  </View>
+                ) : null}
+
                 <Text style={styles.ticketLabel}>TITULAR</Text>
                 <Text style={styles.ticketValue}>{nome}</Text>
 
@@ -613,6 +636,16 @@ export default function Bonde62() {
                 </Text>
 
                 <Text style={styles.ticketEmail}>{email}</Text>
+
+                <View style={styles.ticketSecurityBox}>
+                  <Text style={styles.ticketSecurityTitle}>
+                    🔒 INGRESSO DE USO ÚNICO
+                  </Text>
+                  <Text style={styles.ticketSecurityText}>
+                    Este QR Code será validado na entrada. Depois do primeiro uso,
+                    o ingresso poderá ser marcado como utilizado.
+                  </Text>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -1914,6 +1947,67 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "900",
     fontSize: 14,
+  },
+
+
+  ingressoQrSection: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  ingressoQrBox: {
+    backgroundColor: "#ffffff",
+    padding: 14,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  ingressoQrImage: {
+    width: 190,
+    height: 190,
+  },
+
+  ingressoQrTitle: {
+    color: "#ffffff",
+    fontWeight: "900",
+    fontSize: 13,
+    letterSpacing: 1.2,
+    marginTop: 12,
+  },
+
+  ingressoQrHint: {
+    color: "#bfaec9",
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 5,
+    marginBottom: 6,
+  },
+
+  ticketSecurityBox: {
+    marginTop: 18,
+    backgroundColor: "rgba(255,22,132,0.08)",
+    borderColor: "rgba(255,22,132,0.32)",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 13,
+  },
+
+  ticketSecurityTitle: {
+    color: "#ff1684",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+
+  ticketSecurityText: {
+    color: "#cfc5d6",
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+    marginTop: 6,
   },
 
 });

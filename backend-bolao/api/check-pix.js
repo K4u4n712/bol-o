@@ -1,3 +1,4 @@
+const QRCode = require("qrcode");
 const { db, admin } = require("../lib/firebaseAdmin");
 
 module.exports = async function handler(req, res) {
@@ -49,6 +50,7 @@ module.exports = async function handler(req, res) {
     const raw = await mpResponse.text();
 
     let mpData;
+
     try {
       mpData = raw ? JSON.parse(raw) : {};
     } catch {
@@ -70,55 +72,127 @@ module.exports = async function handler(req, res) {
     const statusDetail =
       payment?.status_detail || mpData?.status_detail || "";
 
-    // No Pix, consideramos aprovado quando o pagamento da transaction
-    // ou a própria order chegam como approved.
     const approved =
       paymentStatus === "approved" ||
       orderStatus === "approved" ||
       statusDetail === "accredited";
 
+    let ticketQrBase64 = null;
+    let ticketCode = null;
+
+    if (approved) {
+      const identificadorSeguro = orderNsu || orderId;
+
+      ticketCode = orderNsu
+        ? `B62-${orderNsu.slice(0, 10).toUpperCase()}`
+        : `B62-${String(orderId).slice(-10).toUpperCase()}`;
+
+      /*
+        O QR NÃO contém nome, e-mail ou valor.
+        Ele carrega apenas um identificador interno que depois
+        será consultado pelo validador da portaria.
+      */
+      const qrPayload = JSON.stringify({
+        type: "BONDE62_TICKET",
+        id: identificadorSeguro,
+        code: ticketCode,
+      });
+
+      ticketQrBase64 = await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 420,
+      });
+    }
+
     if (orderNsu) {
       try {
         const pagamentoRef = db.collection("pagamentos").doc(orderNsu);
 
+        const dadosAtualizacao = {
+          status: approved
+            ? "approved"
+            : paymentStatus || orderStatus || "pending",
+
+          statusDetail: statusDetail || null,
+
+          ingressoStatus: approved
+            ? "confirmed"
+            : "pending",
+
+          mercadoPagoOrderStatus: orderStatus || null,
+          mercadoPagoPaymentStatus: paymentStatus || null,
+
+          respostaConsultaMercadoPago: mpData,
+
+          atualizadoEm:
+            admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        if (approved) {
+          dadosAtualizacao.aprovadoEm =
+            admin.firestore.FieldValue.serverTimestamp();
+
+          dadosAtualizacao.ingressoCodigo = ticketCode;
+          dadosAtualizacao.ingressoQrPayload = {
+            type: "BONDE62_TICKET",
+            id: orderNsu,
+            code: ticketCode,
+          };
+
+          /*
+            Não salvamos a imagem Base64 no Firestore.
+            Guardamos apenas os dados do QR e geramos a imagem
+            quando a tela consulta o pagamento.
+          */
+        }
+
         await pagamentoRef.set(
-          {
-            status: approved ? "approved" : (paymentStatus || orderStatus || "pending"),
-            statusDetail: statusDetail || null,
-            ingressoStatus: approved ? "confirmed" : "pending",
-            mercadoPagoOrderStatus: orderStatus || null,
-            mercadoPagoPaymentStatus: paymentStatus || null,
-            respostaConsultaMercadoPago: mpData,
-            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-            ...(approved
-              ? {
-                  aprovadoEm: admin.firestore.FieldValue.serverTimestamp(),
-                }
-              : {}),
-          },
+          dadosAtualizacao,
           { merge: true }
         );
       } catch (firestoreError) {
-        console.error("Erro ao atualizar Firestore:", firestoreError);
+        console.error(
+          "Erro ao atualizar Firestore:",
+          firestoreError
+        );
       }
     }
 
     return res.status(200).json({
       success: true,
+
       approved,
+
       order_id: orderId,
+
       order_status: orderStatus,
-      payment_id: payment?.id ? String(payment.id) : null,
+
+      payment_id: payment?.id
+        ? String(payment.id)
+        : null,
+
       payment_status: paymentStatus,
-      status: paymentStatus || orderStatus || "pending",
+
+      status:
+        paymentStatus ||
+        orderStatus ||
+        "pending",
+
       status_detail: statusDetail,
+
+      ticket_code: ticketCode,
+
+      // Já vem como "data:image/png;base64,..."
+      ticket_qr_base64: ticketQrBase64,
     });
   } catch (error) {
     console.error("Erro check-pix:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Erro interno ao consultar pagamento.",
+      message:
+        "Erro interno ao consultar pagamento.",
       error: String(error),
     });
   }
