@@ -16,6 +16,8 @@ import {
 const SEU_NUMERO_WHATSAPP = "5562999999999"; // TROQUE PELO SEU NÚMERO
 const API_CREATE_PIX_URL =
   "https://bol-o-rouge.vercel.app/api/create-pix";
+const API_CHECK_PIX_URL =
+  "https://bol-o-rouge.vercel.app/api/check-pix";
 
 const PRECO_LOTE_SECRETO = 1;
 const TEMPO_PROMO_SEGUNDOS = 15 * 60;
@@ -38,7 +40,10 @@ export default function Bonde62() {
   const [pixCopiaCola, setPixCopiaCola] = useState("");
   const [pixQrCode, setPixQrCode] = useState("");
   const [pixPaymentId, setPixPaymentId] = useState("");
+  const [pixOrderId, setPixOrderId] = useState("");
+  const [pixOrderNsu, setPixOrderNsu] = useState("");
   const [pixStatus, setPixStatus] = useState("pending");
+  const [pagamentoAprovado, setPagamentoAprovado] = useState(false);
 
   const mensagens = [
     "Algumas pessoas estão vendo o Lote Secreto agora.",
@@ -70,6 +75,46 @@ export default function Bonde62() {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!pixAberto || !pixOrderId || pagamentoAprovado) return;
+
+    let cancelado = false;
+
+    async function consultarPagamento() {
+      try {
+        const url =
+          `${API_CHECK_PIX_URL}?order_id=${encodeURIComponent(pixOrderId)}` +
+          `&order_nsu=${encodeURIComponent(pixOrderNsu)}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        console.log("Status Pix Bonde 62:", data);
+
+        if (cancelado) return;
+
+        if (data?.status) {
+          setPixStatus(data.status);
+        }
+
+        if (data?.approved) {
+          setPixStatus("approved");
+          setPagamentoAprovado(true);
+        }
+      } catch (error) {
+        console.log("Erro ao consultar Pix:", error);
+      }
+    }
+
+    consultarPagamento();
+    const interval = setInterval(consultarPagamento, 3000);
+
+    return () => {
+      cancelado = true;
+      clearInterval(interval);
+    };
+  }, [pixAberto, pixOrderId, pixOrderNsu, pagamentoAprovado]);
 
   const qtd = useMemo(() => {
     const valor = Number(quantidade.replace(/\D/g, ""));
@@ -152,7 +197,10 @@ export default function Bonde62() {
       setPixCopiaCola(data.qr_code);
       setPixQrCode(data.qr_code_base64 || "");
       setPixPaymentId(data.payment_id || "");
+      setPixOrderId(data.order_id || "");
+      setPixOrderNsu(data.order_nsu || "");
       setPixStatus(data.status || "pending");
+      setPagamentoAprovado(false);
       setPixAberto(true);
     } catch (error) {
       console.log("Erro ao gerar Pix Bonde 62:", error);
@@ -518,58 +566,116 @@ export default function Bonde62() {
         onRequestClose={() => setPixAberto(false)}
       >
         <View style={styles.pixOverlay}>
-          <View style={styles.pixBox}>
-            <Text style={styles.pixKicker}>PAGAMENTO VIA PIX</Text>
-
-            <Text style={styles.pixTitle}>Finalize seu ingresso</Text>
-
-            <Text style={styles.pixValor}>{formatarMoeda(total)}</Text>
-
-            <Text style={styles.pixDescricao}>
-              Escaneie o QR Code abaixo ou use o Pix Copia e Cola.
-            </Text>
-
-            {pixQrCode ? (
-              <View style={styles.qrContainer}>
-                <Image
-                  source={{ uri: `data:image/png;base64,${pixQrCode}` }}
-                  style={styles.qrImage}
-                  resizeMode="contain"
-                />
+          {pagamentoAprovado ? (
+            <View style={styles.ticketScreen}>
+              <View style={styles.approvedCircle}>
+                <Text style={styles.approvedIcon}>✓</Text>
               </View>
-            ) : null}
 
-            <View style={styles.pixStatusBox}>
-              <Text style={styles.pixAguardando}>
-                {pixStatus === "approved"
-                  ? "✅ Pagamento aprovado!"
-                  : "⏳ Aguardando pagamento..."}
+              <Text style={styles.approvedKicker}>PAGAMENTO APROVADO</Text>
+              <Text style={styles.approvedTitle}>Seu ingresso está confirmado!</Text>
+              <Text style={styles.approvedText}>
+                Guarde esta tela e apresente seu ingresso na entrada do evento.
               </Text>
+
+              <View style={styles.ticketCard}>
+                <View style={styles.ticketHeader}>
+                  <View>
+                    <Text style={styles.ticketBrand}>
+                      BONDE <Text style={styles.logoPink}>62</Text>
+                    </Text>
+                    <Text style={styles.ticketSub}>O BAILE • GOIÂNIA</Text>
+                  </View>
+                  <View style={styles.validBadge}>
+                    <Text style={styles.validBadgeText}>VÁLIDO</Text>
+                  </View>
+                </View>
+
+                <View style={styles.ticketDivider} />
+
+                <Text style={styles.ticketLabel}>TITULAR</Text>
+                <Text style={styles.ticketValue}>{nome}</Text>
+
+                <View style={styles.ticketRow}>
+                  <View style={styles.ticketRowItem}>
+                    <Text style={styles.ticketLabel}>QUANTIDADE</Text>
+                    <Text style={styles.ticketValue}>{qtd}</Text>
+                  </View>
+                  <View style={styles.ticketRowItem}>
+                    <Text style={styles.ticketLabel}>VALOR</Text>
+                    <Text style={styles.ticketValue}>{formatarMoeda(total)}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.ticketLabel}>CÓDIGO DO INGRESSO</Text>
+                <Text style={styles.ticketCode}>
+                  {pixOrderNsu ? `B62-${pixOrderNsu.slice(0, 10).toUpperCase()}` : "B62-CONFIRMADO"}
+                </Text>
+
+                <Text style={styles.ticketEmail}>{email}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.ticketButton}
+                onPress={() => setPixAberto(false)}
+              >
+                <Text style={styles.ticketButtonText}>CONCLUIR</Text>
+              </TouchableOpacity>
+
+              {pixOrderId ? (
+                <Text style={styles.pixPaymentId}>Order: {pixOrderId}</Text>
+              ) : null}
             </View>
+          ) : (
+            <View style={styles.pixBox}>
+              <Text style={styles.pixKicker}>PAGAMENTO VIA PIX</Text>
 
-            <View style={styles.pixCodeBox}>
-              <Text style={styles.pixCode} numberOfLines={4}>
-                {pixCopiaCola}
+              <Text style={styles.pixTitle}>Finalize seu ingresso</Text>
+
+              <Text style={styles.pixValor}>{formatarMoeda(total)}</Text>
+
+              <Text style={styles.pixDescricao}>
+                Escaneie o QR Code abaixo ou use o Pix Copia e Cola.
               </Text>
+
+              {pixQrCode ? (
+                <View style={styles.qrContainer}>
+                  <Image
+                    source={{ uri: `data:image/png;base64,${pixQrCode}` }}
+                    style={styles.qrImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.pixStatusBox}>
+                <Text style={styles.pixAguardando}>⏳ Aguardando pagamento...</Text>
+              </View>
+
+              <View style={styles.pixCodeBox}>
+                <Text style={styles.pixCode} numberOfLines={4}>
+                  {pixCopiaCola}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.pixCopyButton}
+                onPress={copiarPix}
+              >
+                <Text style={styles.pixCopyButtonText}>📋 COPIAR PIX</Text>
+              </TouchableOpacity>
+
+              {pixPaymentId ? (
+                <Text style={styles.pixPaymentId}>
+                  Pagamento: {pixPaymentId}
+                </Text>
+              ) : null}
+
+              <TouchableOpacity onPress={() => setPixAberto(false)}>
+                <Text style={styles.pixClose}>fechar</Text>
+              </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={styles.pixCopyButton}
-              onPress={copiarPix}
-            >
-              <Text style={styles.pixCopyButtonText}>📋 COPIAR PIX</Text>
-            </TouchableOpacity>
-
-            {pixPaymentId ? (
-              <Text style={styles.pixPaymentId}>
-                Pagamento: {pixPaymentId}
-              </Text>
-            ) : null}
-
-            <TouchableOpacity onPress={() => setPixAberto(false)}>
-              <Text style={styles.pixClose}>fechar</Text>
-            </TouchableOpacity>
-          </View>
+          )}
         </View>
       </Modal>
     </>
@@ -1651,6 +1757,163 @@ const styles = StyleSheet.create({
     color: "#bfaec9",
     textDecorationLine: "underline",
     marginTop: 14,
+  },
+
+
+  ticketScreen: {
+    width: "100%",
+    maxWidth: 520,
+    backgroundColor: "#09000e",
+    borderColor: "#ff1684",
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 26,
+    alignItems: "center",
+  },
+
+  approvedCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "#18c96e",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+
+  approvedIcon: {
+    color: "#fff",
+    fontSize: 42,
+    fontWeight: "900",
+    lineHeight: 48,
+  },
+
+  approvedKicker: {
+    color: "#18c96e",
+    fontWeight: "900",
+    fontSize: 12,
+    letterSpacing: 2,
+  },
+
+  approvedTitle: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 28,
+    textAlign: "center",
+    marginTop: 8,
+  },
+
+  approvedText: {
+    color: "#cfc5d6",
+    textAlign: "center",
+    lineHeight: 21,
+    marginTop: 8,
+    marginBottom: 18,
+  },
+
+  ticketCard: {
+    width: "100%",
+    backgroundColor: "#17001f",
+    borderColor: "rgba(255,22,132,0.55)",
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 20,
+  },
+
+  ticketHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  ticketBrand: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "900",
+  },
+
+  ticketSub: {
+    color: "#bfaec9",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+
+  validBadge: {
+    backgroundColor: "rgba(24,201,110,0.14)",
+    borderColor: "#18c96e",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+
+  validBadgeText: {
+    color: "#18c96e",
+    fontWeight: "900",
+    fontSize: 11,
+  },
+
+  ticketDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    marginVertical: 18,
+  },
+
+  ticketLabel: {
+    color: "#a998b4",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginTop: 10,
+  },
+
+  ticketValue: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 4,
+  },
+
+  ticketRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 4,
+  },
+
+  ticketRowItem: {
+    flex: 1,
+  },
+
+  ticketCode: {
+    color: "#ff1684",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 5,
+  },
+
+  ticketEmail: {
+    color: "#bfaec9",
+    fontSize: 12,
+    marginTop: 14,
+  },
+
+  ticketButton: {
+    width: "100%",
+    backgroundColor: "#ff1684",
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 18,
+  },
+
+  ticketButtonText: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 14,
   },
 
 });
