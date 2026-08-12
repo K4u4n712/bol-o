@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -220,6 +221,26 @@ export default function Bonde62() {
     }
   }
 
+  function abrirContaAposPagamento(modoConta: "criar" | "entrar") {
+    const emailCompra = email.trim();
+
+    // Fecha o Modal atual antes de trocar de rota.
+    // Sem isso, o Modal do pagamento aprovado continua por cima
+    // da nova tela, mesmo que a rota já tenha mudado no fundo.
+    setPixAberto(false);
+
+    setTimeout(() => {
+      router.push({
+        pathname: "/bonde62-conta",
+        params: {
+          email: emailCompra,
+          modo: modoConta,
+          origem: "compra",
+        },
+      });
+    }, 80);
+  }
+
   async function copiarPix() {
     if (!pixCopiaCola) return;
 
@@ -267,7 +288,9 @@ export default function Bonde62() {
               {isWide && (
                 <View style={styles.navLinks}>
                   <Text style={styles.navText}>O EVENTO</Text>
-                  <Text style={styles.navText}>INGRESSOS</Text>
+                  <TouchableOpacity onPress={() => router.push("/meus-ingressos")}>
+                    <Text style={styles.navText}>MEUS INGRESSOS</Text>
+                  </TouchableOpacity>
                   <Text style={styles.navText}>COMO FUNCIONA</Text>
                   <Text style={styles.navText}>FAQ</Text>
                 </View>
@@ -573,91 +596,62 @@ export default function Bonde62() {
       >
         <View style={styles.pixOverlay}>
           {pagamentoAprovado ? (
-            <View style={styles.ticketScreen}>
+            <View style={styles.approvedAccessScreen}>
               <View style={styles.approvedCircle}>
                 <Text style={styles.approvedIcon}>✓</Text>
               </View>
 
               <Text style={styles.approvedKicker}>PAGAMENTO APROVADO</Text>
-              <Text style={styles.approvedTitle}>Seu ingresso está confirmado!</Text>
-              <Text style={styles.approvedText}>
-                Guarde esta tela e apresente seu ingresso na entrada do evento.
+
+              <Text style={styles.approvedTitle}>
+                Seu ingresso foi confirmado!
               </Text>
 
-              <View style={styles.ticketCard}>
-                <View style={styles.ticketHeader}>
-                  <View>
-                    <Text style={styles.ticketBrand}>
-                      BONDE <Text style={styles.logoPink}>62</Text>
-                    </Text>
-                    <Text style={styles.ticketSub}>O BAILE • GOIÂNIA</Text>
-                  </View>
-                  <View style={styles.validBadge}>
-                    <Text style={styles.validBadgeText}>VÁLIDO</Text>
-                  </View>
-                </View>
+              <Text style={styles.approvedText}>
+                Seu ingresso está seguro e vinculado ao e-mail usado na compra.
+              </Text>
 
-                <View style={styles.ticketDivider} />
-
-                {ingressoQrBase64 ? (
-                  <View style={styles.ingressoQrSection}>
-                    <View style={styles.ingressoQrBox}>
-                      <Image
-                        source={{ uri: ingressoQrBase64 }}
-                        style={styles.ingressoQrImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <Text style={styles.ingressoQrTitle}>QR CODE DO INGRESSO</Text>
-                    <Text style={styles.ingressoQrHint}>
-                      Apresente este QR Code na entrada do evento.
-                    </Text>
-                  </View>
-                ) : null}
-
-                <Text style={styles.ticketLabel}>TITULAR</Text>
-                <Text style={styles.ticketValue}>{nome}</Text>
-
-                <View style={styles.ticketRow}>
-                  <View style={styles.ticketRowItem}>
-                    <Text style={styles.ticketLabel}>QUANTIDADE</Text>
-                    <Text style={styles.ticketValue}>{qtd}</Text>
-                  </View>
-                  <View style={styles.ticketRowItem}>
-                    <Text style={styles.ticketLabel}>VALOR</Text>
-                    <Text style={styles.ticketValue}>{formatarMoeda(total)}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.ticketLabel}>CÓDIGO DO INGRESSO</Text>
-                <Text style={styles.ticketCode}>
-                  {pixOrderNsu ? `B62-${pixOrderNsu.slice(0, 10).toUpperCase()}` : "B62-CONFIRMADO"}
+              <View style={styles.approvedEmailBox}>
+                <Text style={styles.approvedEmailLabel}>
+                  E-MAIL DA COMPRA
                 </Text>
+                <Text style={styles.approvedEmailValue}>
+                  {email.trim()}
+                </Text>
+              </View>
 
-                <Text style={styles.ticketEmail}>{email}</Text>
-
-                <View style={styles.ticketSecurityBox}>
-                  <Text style={styles.ticketSecurityTitle}>
-                    🔒 INGRESSO DE USO ÚNICO
-                  </Text>
-                  <Text style={styles.ticketSecurityText}>
-                    Este QR Code será validado na entrada. Depois do primeiro uso,
-                    o ingresso poderá ser marcado como utilizado.
-                  </Text>
-                </View>
+              <View style={styles.approvedInfoBox}>
+                <Text style={styles.approvedInfoTitle}>
+                  🔐 Crie uma senha para acessar seu ingresso
+                </Text>
+                <Text style={styles.approvedInfoText}>
+                  Você só precisa criar sua senha uma vez. Depois, sempre poderá
+                  entrar em Meus Ingressos usando este e-mail e sua senha.
+                </Text>
               </View>
 
               <TouchableOpacity
                 style={styles.ticketButton}
-                onPress={() => setPixAberto(false)}
+                onPress={() => abrirContaAposPagamento("criar")}
               >
-                <Text style={styles.ticketButtonText}>CONCLUIR</Text>
+                <Text style={styles.ticketButtonText}>
+                  CRIAR SENHA E VER MEUS INGRESSOS →
+                </Text>
               </TouchableOpacity>
 
-              {pixOrderId ? (
-                <Text style={styles.pixPaymentId}>Order: {pixOrderId}</Text>
-              ) : null}
+              <TouchableOpacity
+                style={styles.approvedLoginButton}
+                onPress={() => abrirContaAposPagamento("entrar")}
+              >
+                <Text style={styles.approvedLoginButtonText}>
+                  JÁ TENHO CONTA
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.approvedSecurityText}>
+                Seu QR Code e os dados do ingresso ficam disponíveis somente em
+                Meus Ingressos.
+              </Text>
             </View>
           ) : (
             <View style={styles.pixBox}>
@@ -2008,6 +2002,109 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: "center",
     marginTop: 6,
+  },
+
+
+  ticketSecondaryButton: {
+    width: "100%",
+    borderColor: "rgba(255,22,132,0.55)",
+    borderWidth: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 10,
+    backgroundColor: "rgba(255,22,132,0.05)",
+  },
+
+  ticketSecondaryButtonText: {
+    color: "#ffffff",
+    fontWeight: "900",
+    fontSize: 13,
+  },
+
+
+  approvedAccessScreen: {
+    width: "100%",
+    maxWidth: 520,
+    backgroundColor: "#120018",
+    borderColor: "#ff1684",
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 28,
+    alignItems: "center",
+  },
+
+  approvedEmailBox: {
+    width: "100%",
+    backgroundColor: "#1a0521",
+    borderColor: "rgba(255,22,132,0.35)",
+    borderWidth: 1,
+    borderRadius: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 18,
+  },
+
+  approvedEmailLabel: {
+    color: "#8f8199",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+
+  approvedEmailValue: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 5,
+  },
+
+  approvedInfoBox: {
+    width: "100%",
+    backgroundColor: "rgba(255,22,132,0.07)",
+    borderColor: "rgba(255,22,132,0.25)",
+    borderWidth: 1,
+    borderRadius: 15,
+    padding: 16,
+    marginTop: 14,
+  },
+
+  approvedInfoTitle: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 14,
+  },
+
+  approvedInfoText: {
+    color: "#b8aabd",
+    fontSize: 12,
+    lineHeight: 19,
+    marginTop: 7,
+  },
+
+  approvedLoginButton: {
+    width: "100%",
+    borderColor: "rgba(255,22,132,0.55)",
+    borderWidth: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 10,
+    backgroundColor: "rgba(255,22,132,0.04)",
+  },
+
+  approvedLoginButtonText: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 12,
+  },
+
+  approvedSecurityText: {
+    color: "#85788e",
+    textAlign: "center",
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 15,
   },
 
 });

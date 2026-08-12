@@ -130,6 +130,8 @@ module.exports = async function handler(req, res) {
       quantidade,
       evento,
       lote,
+      userId,
+      userEmail,
     } = body || {};
 
     if (!nome || !email || !whatsapp) {
@@ -170,7 +172,16 @@ module.exports = async function handler(req, res) {
 
     const nomeComprador = String(nome).trim();
     const emailComprador = String(email).trim();
+    const emailNormalizado = emailComprador.toLowerCase();
     const whatsappComprador = String(whatsapp).trim();
+
+    // Estes campos são apenas informativos nesta etapa.
+    // A autorização da tela "Meus Ingressos" é feita no backend
+    // pelo token real do Firebase, nunca confiando apenas no body.
+    const userIdInformado = userId ? String(userId).trim() : null;
+    const userEmailInformado = userEmail
+      ? String(userEmail).trim().toLowerCase()
+      : null;
 
     await pagamentoRef.set({
       tipo: "bonde62_ingresso",
@@ -180,7 +191,11 @@ module.exports = async function handler(req, res) {
 
       nome: nomeComprador,
       email: emailComprador,
+      emailNormalizado,
       whatsapp: whatsappComprador,
+
+      userIdInformado,
+      userEmailInformado,
 
       descricao,
 
