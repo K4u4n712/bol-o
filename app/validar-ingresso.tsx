@@ -16,70 +16,134 @@ import {
 const API_VALIDAR_INGRESSO_URL =
   "https://bol-o-rouge.vercel.app/api/validar-ingresso";
 
+type Ticket = {
+  id?: string;
+  codigo?: string;
+  nome?: string;
+  email?: string;
+  quantidade?: number;
+  lote?: string;
+  valor?: number;
+  utilizadoEmTexto?: string;
+  validadoEmTexto?: string;
+};
+
+type Dashboard = {
+  summary: {
+    totalAprovados: number;
+    totalValidados: number;
+    totalDisponiveis: number;
+    ultimoValidadoEm?: string;
+  };
+  history: Ticket[];
+} | null;
+
 type Resultado =
   | {
       type: "valid";
       title: string;
       message: string;
-      ticket?: any;
+      ticket?: Ticket;
     }
   | {
       type: "used";
       title: string;
       message: string;
-      ticket?: any;
+      ticket?: Ticket;
     }
   | {
       type: "invalid";
       title: string;
       message: string;
-      ticket?: any;
+      ticket?: Ticket;
     }
   | null;
+
+type TabType = "scanner" | "codigo" | "historico";
 
 export default function ValidarIngresso() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [pin, setPin] = useState("");
   const [pinLiberado, setPinLiberado] = useState(false);
+
   const [scannerAtivo, setScannerAtivo] = useState(true);
   const [validando, setValidando] = useState(false);
   const [resultado, setResultado] = useState<Resultado>(null);
-  const [ultimoQr, setUltimoQr] = useState("");
+  const [ultimoValorLido, setUltimoValorLido] = useState("");
+  const [abaAtiva, setAbaAtiva] = useState<TabType>("scanner");
+
+  const [codigoManual, setCodigoManual] = useState("");
+  const [dashboard, setDashboard] = useState<Dashboard>(null);
+  const [carregandoPainel, setCarregandoPainel] = useState(false);
 
   const cameraLiberada = useMemo(
     () => Boolean(permission?.granted),
     [permission?.granted]
   );
 
-  async function liberarScanner() {
+  async function liberarAcesso() {
     if (!pin.trim()) {
-      Alert.alert("Digite o PIN", "Informe o PIN da portaria.");
+      Alert.alert("PIN obrigatório", "Digite o PIN da portaria.");
       return;
-    }
-
-    if (!permission?.granted) {
-      const resposta = await requestPermission();
-
-      if (!resposta.granted) {
-        Alert.alert(
-          "Câmera não autorizada",
-          "Permita o acesso à câmera para validar os ingressos."
-        );
-        return;
-      }
     }
 
     setPinLiberado(true);
     setScannerAtivo(true);
+    await carregarPainel(pin.trim());
   }
 
-  async function validarQr(qrData: string) {
-    if (!scannerAtivo || validando || !qrData) return;
+  async function carregarPainel(pinAtual = pin.trim()) {
+    if (!pinAtual) return;
+
+    setCarregandoPainel(true);
+
+    try {
+      const response = await fetch(
+        `${API_VALIDAR_INGRESSO_URL}?mode=dashboard&pin=${encodeURIComponent(
+          pinAtual
+        )}`,
+        {
+          method: "GET",
+          headers: {
+            "X-Validator-Pin": pinAtual,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.status === 401 || response.status === 403) {
+        setPinLiberado(false);
+        Alert.alert("PIN inválido", "O PIN da portaria não foi aceito.");
+        return;
+      }
+
+      if (!response.ok || !data?.success) {
+        return;
+      }
+
+      setDashboard({
+        summary: {
+          totalAprovados: Number(data?.summary?.totalAprovados || 0),
+          totalValidados: Number(data?.summary?.totalValidados || 0),
+          totalDisponiveis: Number(data?.summary?.totalDisponiveis || 0),
+          ultimoValidadoEm: data?.summary?.ultimoValidadoEm || "",
+        },
+        history: Array.isArray(data?.history) ? data.history : [],
+      });
+    } catch (error) {
+      console.log("Erro ao carregar painel:", error);
+    } finally {
+      setCarregandoPainel(false);
+    }
+  }
+
+  async function enviarValidacao(payload: { qr?: string; code?: string }) {
+    if (validando) return;
 
     setScannerAtivo(false);
     setValidando(true);
-    setUltimoQr(qrData);
 
     try {
       const response = await fetch(API_VALIDAR_INGRESSO_URL, {
@@ -88,9 +152,7 @@ export default function ValidarIngresso() {
           "Content-Type": "application/json",
           "X-Validator-Pin": pin.trim(),
         },
-        body: JSON.stringify({
-          qr: qrData,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -114,6 +176,7 @@ export default function ValidarIngresso() {
             "Este ingresso já foi utilizado anteriormente.",
           ticket: data?.ticket,
         });
+        await carregarPainel();
         return;
       }
 
@@ -123,18 +186,22 @@ export default function ValidarIngresso() {
           title: "INGRESSO INVÁLIDO",
           message:
             data?.message ||
-            "Este QR Code não corresponde a um ingresso válido.",
+            "Este ingresso não é válido ou ainda não foi aprovado.",
           ticket: data?.ticket,
         });
+        await carregarPainel();
         return;
       }
 
       setResultado({
         type: "valid",
-        title: "INGRESSO VÁLIDO",
-        message: "Entrada liberada. O ingresso foi marcado como utilizado.",
+        title: "ENTRADA LIBERADA",
+        message: "Ingresso validado com sucesso.",
         ticket: data?.ticket,
       });
+
+      setCodigoManual("");
+      await carregarPainel();
     } catch (error) {
       console.log("Erro ao validar ingresso:", error);
 
@@ -142,24 +209,54 @@ export default function ValidarIngresso() {
         type: "invalid",
         title: "ERRO AO VALIDAR",
         message:
-          "Não foi possível consultar o servidor. Verifique a internet e tente novamente.",
+          "Não foi possível conectar ao servidor. Verifique a internet e tente novamente.",
       });
     } finally {
       setValidando(false);
     }
   }
 
+  async function validarQr(qrData: string) {
+    if (!scannerAtivo || validando || !qrData) return;
+
+    setUltimoValorLido(qrData);
+    await enviarValidacao({ qr: qrData });
+  }
+
+  async function validarCodigoManual() {
+    const codigo = codigoManual.trim().toUpperCase();
+
+    if (!codigo) {
+      Alert.alert(
+        "Código obrigatório",
+        "Digite o código do ingresso para validar manualmente."
+      );
+      return;
+    }
+
+    setUltimoValorLido(codigo);
+    await enviarValidacao({ code: codigo });
+  }
+
   function escanearProximo() {
     setResultado(null);
-    setUltimoQr("");
+    setUltimoValorLido("");
     setScannerAtivo(true);
   }
 
   function trocarPin() {
     setPinLiberado(false);
     setPin("");
-    setResultado(null);
     setScannerAtivo(true);
+    setResultado(null);
+    setDashboard(null);
+  }
+
+  function formatMoney(value?: number) {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(Number(value || 0));
   }
 
   if (!pinLiberado) {
@@ -169,11 +266,11 @@ export default function ValidarIngresso() {
           <Text style={styles.brand}>
             BONDE <Text style={styles.pink}>62</Text>
           </Text>
-          <Text style={styles.brandSub}>VALIDADOR DE INGRESSOS</Text>
+          <Text style={styles.brandSub}>VALIDADOR OFICIAL</Text>
 
           <Text style={styles.loginTitle}>Acesso da portaria</Text>
           <Text style={styles.loginText}>
-            Digite o PIN do evento para liberar o leitor de QR Code.
+            Digite o PIN para liberar o painel de validação de ingressos.
           </Text>
 
           <TextInput
@@ -188,9 +285,9 @@ export default function ValidarIngresso() {
 
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={liberarScanner}
+            onPress={liberarAcesso}
           >
-            <Text style={styles.primaryButtonText}>LIBERAR CÂMERA</Text>
+            <Text style={styles.primaryButtonText}>ENTRAR NO PAINEL</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -204,199 +301,394 @@ export default function ValidarIngresso() {
     );
   }
 
-  if (!cameraLiberada) {
-    return (
-      <View style={styles.pageCenter}>
-        <View style={styles.loginCard}>
-          <Text style={styles.loginTitle}>Precisamos da câmera</Text>
-          <Text style={styles.loginText}>
-            Autorize a câmera para escanear os QR Codes.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={requestPermission}
-          >
-            <Text style={styles.primaryButtonText}>PERMITIR CÂMERA</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <>
       <View style={styles.page}>
-        <View style={styles.topbar}>
-          <View>
-            <Text style={styles.brand}>
-              BONDE <Text style={styles.pink}>62</Text>
-            </Text>
-            <Text style={styles.brandSub}>VALIDADOR</Text>
-          </View>
-
-          <TouchableOpacity onPress={trocarPin}>
-            <Text style={styles.topAction}>TROCAR PIN</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.cameraArea}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            active={scannerAtivo && !resultado && !validando}
-            barcodeScannerSettings={{
-              barcodeTypes: ["qr"],
-            }}
-            onBarcodeScanned={
-              scannerAtivo && !resultado && !validando
-                ? ({ data }) => validarQr(data)
-                : undefined
-            }
-          />
-
-          <View style={styles.cameraShadeTop} />
-          <View style={styles.cameraShadeBottom} />
-          <View style={styles.cameraShadeLeft} />
-          <View style={styles.cameraShadeRight} />
-
-          <View style={styles.scannerFrame}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-          </View>
-
-          <View style={styles.cameraInstruction}>
-            {validando ? (
-              <>
-                <ActivityIndicator color="#fff" />
-                <Text style={styles.cameraInstructionText}>
-                  VALIDANDO INGRESSO...
-                </Text>
-              </>
-            ) : (
-              <Text style={styles.cameraInstructionText}>
-                APONTE A CÂMERA PARA O QR CODE
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.brand}>
+                BONDE <Text style={styles.pink}>62</Text>
               </Text>
-            )}
-          </View>
-        </View>
+              <Text style={styles.brandSub}>PAINEL DE VALIDAÇÃO</Text>
+            </View>
 
-        <View style={styles.bottomInfo}>
-          <Text style={styles.bottomTitle}>Entrada Bonde 62</Text>
-          <Text style={styles.bottomText}>
-            Cada ingresso pode ser validado apenas uma vez.
-          </Text>
-        </View>
+            <TouchableOpacity style={styles.smallAction} onPress={trocarPin}>
+              <Text style={styles.smallActionText}>TROCAR PIN</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.heroCard}>
+            <Text style={styles.heroEyebrow}>PORTARIA / CHECK-IN</Text>
+            <Text style={styles.heroTitle}>Validação de ingressos</Text>
+            <Text style={styles.heroText}>
+              Escaneie o QR Code ou digite o código do ingresso manualmente.
+            </Text>
+          </View>
+
+          <View style={styles.statsRow}>
+            <StatCard
+              label="Já validados"
+              value={dashboard?.summary?.totalValidados ?? 0}
+              accent="#18d26b"
+            />
+            <StatCard
+              label="Ainda disponíveis"
+              value={dashboard?.summary?.totalDisponiveis ?? 0}
+              accent="#ffca3a"
+            />
+            <StatCard
+              label="Total aprovados"
+              value={dashboard?.summary?.totalAprovados ?? 0}
+              accent="#ff1684"
+            />
+          </View>
+
+          <View style={styles.lastValidationBox}>
+            <Text style={styles.lastValidationLabel}>ÚLTIMA VALIDAÇÃO</Text>
+            <Text style={styles.lastValidationValue}>
+              {dashboard?.summary?.ultimoValidadoEm || "Nenhuma ainda"}
+            </Text>
+          </View>
+
+          <View style={styles.tabs}>
+            <TabButton
+              active={abaAtiva === "scanner"}
+              label="QR Code"
+              onPress={() => setAbaAtiva("scanner")}
+            />
+            <TabButton
+              active={abaAtiva === "codigo"}
+              label="Código"
+              onPress={() => setAbaAtiva("codigo")}
+            />
+            <TabButton
+              active={abaAtiva === "historico"}
+              label="Histórico"
+              onPress={() => setAbaAtiva("historico")}
+            />
+          </View>
+
+          {abaAtiva === "scanner" ? (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Leitor de QR Code</Text>
+              <Text style={styles.sectionText}>
+                Aponte a câmera para o QR Code do ingresso.
+              </Text>
+
+              <View style={styles.cameraCard}>
+                {cameraLiberada ? (
+                  <>
+                    <CameraView
+                      style={StyleSheet.absoluteFill}
+                      facing="back"
+                      active={scannerAtivo && !resultado && !validando}
+                      barcodeScannerSettings={{
+                        barcodeTypes: ["qr"],
+                      }}
+                      onBarcodeScanned={
+                        scannerAtivo && !resultado && !validando
+                          ? ({ data }) => validarQr(data)
+                          : undefined
+                      }
+                    />
+                    <View style={styles.cameraShadeTop} />
+                    <View style={styles.cameraShadeBottom} />
+                    <View style={styles.cameraShadeLeft} />
+                    <View style={styles.cameraShadeRight} />
+
+                    <View style={styles.scannerFrame}>
+                      <View style={[styles.corner, styles.cornerTL]} />
+                      <View style={[styles.corner, styles.cornerTR]} />
+                      <View style={[styles.corner, styles.cornerBL]} />
+                      <View style={[styles.corner, styles.cornerBR]} />
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.permissionBox}>
+                    <Text style={styles.permissionIcon}>📷</Text>
+                    <Text style={styles.permissionTitle}>
+                      Permita o uso da câmera
+                    </Text>
+                    <Text style={styles.permissionText}>
+                      Para ler QR Code direto pelo celular.
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.primaryButton}
+                      onPress={requestPermission}
+                    >
+                      <Text style={styles.primaryButtonText}>
+                        PERMITIR CÂMERA
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <View style={styles.cameraInstruction}>
+                  {validando ? (
+                    <>
+                      <ActivityIndicator color="#fff" />
+                      <Text style={styles.cameraInstructionText}>
+                        VALIDANDO...
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={styles.cameraInstructionText}>
+                      APONTE O QR NO QUADRO
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.quickRow}>
+                <TouchableOpacity
+                  style={styles.quickButton}
+                  onPress={() => setAbaAtiva("codigo")}
+                >
+                  <Text style={styles.quickButtonText}>VALIDAR POR CÓDIGO</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickButtonSecondary}
+                  onPress={() => carregarPainel()}
+                >
+                  <Text style={styles.quickButtonSecondaryText}>
+                    ATUALIZAR PAINEL
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
+          {abaAtiva === "codigo" ? (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Validação manual</Text>
+              <Text style={styles.sectionText}>
+                Digite o código do ingresso. Exemplo: B62-XXXXXXXX
+              </Text>
+
+              <TextInput
+                style={styles.manualInput}
+                value={codigoManual}
+                onChangeText={(text) => setCodigoManual(text.toUpperCase())}
+                placeholder="Digite o código do ingresso"
+                placeholderTextColor="#84778e"
+                autoCapitalize="characters"
+              />
+
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={validarCodigoManual}
+                disabled={validando}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {validando ? "VALIDANDO..." : "VALIDAR CÓDIGO"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => setAbaAtiva("scanner")}
+              >
+                <Text style={styles.secondaryButtonText}>VOLTAR AO QR CODE</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {abaAtiva === "historico" ? (
+            <View style={styles.sectionCard}>
+              <View style={styles.historyHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Últimas validações</Text>
+                  <Text style={styles.sectionText}>
+                    Histórico recente da portaria.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.refreshPill}
+                  onPress={() => carregarPainel()}
+                >
+                  <Text style={styles.refreshPillText}>ATUALIZAR</Text>
+                </TouchableOpacity>
+              </View>
+
+              {carregandoPainel ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator color="#ff1684" />
+                  <Text style={styles.loadingText}>Carregando histórico...</Text>
+                </View>
+              ) : dashboard?.history?.length ? (
+                dashboard.history.map((item, index) => (
+                  <View style={styles.historyItem} key={`${item.codigo}-${index}`}>
+                    <View style={styles.historyBadge}>
+                      <Text style={styles.historyBadgeText}>✓</Text>
+                    </View>
+
+                    <View style={styles.historyContent}>
+                      <Text style={styles.historyName}>
+                        {item.nome || "Sem nome"}
+                      </Text>
+                      <Text style={styles.historyCode}>
+                        {item.codigo || "Sem código"}
+                      </Text>
+                      <Text style={styles.historyMeta}>
+                        {item.email || "Sem e-mail"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.historyRight}>
+                      <Text style={styles.historyStatus}>VALIDADO</Text>
+                      <Text style={styles.historyTime}>
+                        {item.validadoEmTexto || item.utilizadoEmTexto || "—"}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyIcon}>🕘</Text>
+                  <Text style={styles.emptyTitle}>Nenhuma validação ainda</Text>
+                  <Text style={styles.emptyText}>
+                    Assim que algum ingresso for validado, ele aparece aqui.
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : null}
+        </ScrollView>
       </View>
 
       <Modal
         visible={Boolean(resultado)}
         transparent
         animationType="fade"
-        onRequestClose={() => {}}
+        onRequestClose={escanearProximo}
       >
         <View style={styles.resultOverlay}>
           {resultado ? (
-            <ScrollView
-              contentContainerStyle={styles.resultScroll}
-              showsVerticalScrollIndicator={false}
+            <View
+              style={[
+                styles.resultCard,
+                resultado.type === "valid" && styles.resultCardValid,
+                resultado.type === "used" && styles.resultCardUsed,
+                resultado.type === "invalid" && styles.resultCardInvalid,
+              ]}
             >
               <View
                 style={[
-                  styles.resultCard,
-                  resultado.type === "valid" && styles.resultCardValid,
-                  resultado.type === "used" && styles.resultCardUsed,
-                  resultado.type === "invalid" && styles.resultCardInvalid,
+                  styles.resultCircle,
+                  resultado.type === "valid" && styles.resultCircleValid,
+                  resultado.type === "used" && styles.resultCircleUsed,
+                  resultado.type === "invalid" && styles.resultCircleInvalid,
                 ]}
               >
-                <View
-                  style={[
-                    styles.resultCircle,
-                    resultado.type === "valid" && styles.resultCircleValid,
-                    resultado.type === "used" && styles.resultCircleUsed,
-                    resultado.type === "invalid" && styles.resultCircleInvalid,
-                  ]}
-                >
-                  <Text style={styles.resultIcon}>
-                    {resultado.type === "valid"
-                      ? "✓"
-                      : resultado.type === "used"
-                      ? "!"
-                      : "×"}
-                  </Text>
-                </View>
-
-                <Text
-                  style={[
-                    styles.resultTitle,
-                    resultado.type === "valid" && styles.resultTitleValid,
-                    resultado.type === "used" && styles.resultTitleUsed,
-                    resultado.type === "invalid" && styles.resultTitleInvalid,
-                  ]}
-                >
-                  {resultado.title}
-                </Text>
-
-                <Text style={styles.resultMessage}>
-                  {resultado.message}
-                </Text>
-
-                {resultado.ticket ? (
-                  <View style={styles.ticketInfoBox}>
-                    <Info label="TITULAR" value={resultado.ticket.nome} />
-                    <Info
-                      label="CÓDIGO"
-                      value={resultado.ticket.codigo}
-                    />
-                    <Info
-                      label="QUANTIDADE"
-                      value={String(resultado.ticket.quantidade || 1)}
-                    />
-                    <Info
-                      label="E-MAIL"
-                      value={resultado.ticket.email}
-                    />
-                    {resultado.ticket.utilizadoEmTexto ? (
-                      <Info
-                        label="UTILIZADO EM"
-                        value={resultado.ticket.utilizadoEmTexto}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
-
-                {resultado.type === "invalid" &&
-                resultado.title === "PIN INVÁLIDO" ? (
-                  <TouchableOpacity
-                    style={styles.resultPrimaryButton}
-                    onPress={trocarPin}
-                  >
-                    <Text style={styles.resultPrimaryButtonText}>
-                      DIGITAR PIN NOVAMENTE
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.resultPrimaryButton}
-                    onPress={escanearProximo}
-                  >
-                    <Text style={styles.resultPrimaryButtonText}>
-                      ESCANEAR PRÓXIMO
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                <Text style={styles.debugCode} numberOfLines={2}>
-                  {ultimoQr}
+                <Text style={styles.resultIcon}>
+                  {resultado.type === "valid"
+                    ? "✓"
+                    : resultado.type === "used"
+                    ? "!"
+                    : "×"}
                 </Text>
               </View>
-            </ScrollView>
+
+              <Text
+                style={[
+                  styles.resultTitle,
+                  resultado.type === "valid" && styles.resultTitleValid,
+                  resultado.type === "used" && styles.resultTitleUsed,
+                  resultado.type === "invalid" && styles.resultTitleInvalid,
+                ]}
+              >
+                {resultado.title}
+              </Text>
+
+              <Text style={styles.resultMessage}>{resultado.message}</Text>
+
+              {resultado.ticket ? (
+                <View style={styles.ticketInfoBox}>
+                  <Info label="TITULAR" value={resultado.ticket.nome} />
+                  <Info label="CÓDIGO" value={resultado.ticket.codigo} />
+                  <Info
+                    label="QUANTIDADE"
+                    value={String(resultado.ticket.quantidade || 1)}
+                  />
+                  <Info
+                    label="E-MAIL"
+                    value={resultado.ticket.email}
+                  />
+                  <Info
+                    label="VALOR"
+                    value={formatMoney(resultado.ticket.valor)}
+                  />
+                  {resultado.ticket.utilizadoEmTexto ? (
+                    <Info
+                      label="UTILIZADO EM"
+                      value={resultado.ticket.utilizadoEmTexto}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                style={styles.resultPrimaryButton}
+                onPress={escanearProximo}
+              >
+                <Text style={styles.resultPrimaryButtonText}>
+                  VALIDAR PRÓXIMO
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.debugCode} numberOfLines={2}>
+                {ultimoValorLido}
+              </Text>
+            </View>
           ) : null}
         </View>
       </Modal>
     </>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: string;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={[styles.statValue, { color: accent }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.tabButton, active && styles.tabButtonActive]}
+      onPress={onPress}
+    >
+      <Text style={[styles.tabButtonText, active && styles.tabButtonTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -420,12 +712,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#050008",
   },
+  scrollContent: {
+    padding: 18,
+    paddingBottom: 40,
+  },
   pageCenter: {
     flex: 1,
     backgroundColor: "#050008",
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: 20,
   },
   loginCard: {
     width: "100%",
@@ -434,7 +730,39 @@ const styles = StyleSheet.create({
     borderColor: "#ff1684",
     borderWidth: 1,
     borderRadius: 24,
-    padding: 26,
+    padding: 24,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  heroCard: {
+    backgroundColor: "#120018",
+    borderWidth: 1,
+    borderColor: "rgba(255,22,132,0.45)",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 16,
+  },
+  heroEyebrow: {
+    color: "#ff1684",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  heroTitle: {
+    color: "#fff",
+    fontSize: 26,
+    fontWeight: "900",
+  },
+  heroText: {
+    color: "#b9aeca",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
   },
   brand: {
     color: "#fff",
@@ -453,9 +781,9 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     color: "#fff",
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: "900",
-    marginTop: 28,
+    marginTop: 26,
   },
   loginText: {
     color: "#b1a4ba",
@@ -468,7 +796,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a0521",
     borderColor: "rgba(255,255,255,0.12)",
     borderWidth: 1,
-    borderRadius: 13,
+    borderRadius: 14,
     color: "#fff",
     paddingHorizontal: 15,
     paddingVertical: 15,
@@ -479,10 +807,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     width: "100%",
     backgroundColor: "#ff1684",
-    borderRadius: 13,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 14,
   },
   primaryButtonText: {
     color: "#fff",
@@ -491,9 +819,9 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     width: "100%",
-    borderColor: "rgba(255,22,132,0.5)",
+    borderColor: "rgba(255,22,132,0.45)",
     borderWidth: 1,
-    borderRadius: 13,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 10,
@@ -503,70 +831,179 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     fontSize: 11,
   },
-  topbar: {
-    minHeight: 82,
-    paddingHorizontal: 22,
-    backgroundColor: "#08000c",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  smallAction: {
+    backgroundColor: "#1a0521",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,22,132,0.35)",
   },
-  topAction: {
+  smallActionText: {
     color: "#ff1684",
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "900",
   },
-  cameraArea: {
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+  statCard: {
     flex: 1,
-    minHeight: 450,
-    position: "relative",
+    backgroundColor: "#120018",
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: "900",
+  },
+  statLabel: {
+    color: "#c1b6c7",
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 6,
+    fontWeight: "700",
+  },
+  lastValidationBox: {
+    backgroundColor: "#120018",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    marginBottom: 16,
+  },
+  lastValidationLabel: {
+    color: "#8f809b",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+  lastValidationValue: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 6,
+  },
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: "#100015",
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 13,
+    alignItems: "center",
+  },
+  tabButtonActive: {
+    backgroundColor: "#ff1684",
+  },
+  tabButtonText: {
+    color: "#9b8ea3",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  tabButtonTextActive: {
+    color: "#fff",
+  },
+  sectionCard: {
+    backgroundColor: "#120018",
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+  },
+  sectionTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  sectionText: {
+    color: "#b7adc1",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  cameraCard: {
+    height: 380,
+    borderRadius: 22,
     overflow: "hidden",
     backgroundColor: "#000",
+    position: "relative",
     alignItems: "center",
     justifyContent: "center",
+  },
+  permissionBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  permissionIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  permissionTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  permissionText: {
+    color: "#b7adc1",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
   },
   cameraShadeTop: {
     position: "absolute",
     left: 0,
     right: 0,
     top: 0,
-    height: "20%",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    height: "18%",
+    backgroundColor: "rgba(0,0,0,0.58)",
   },
   cameraShadeBottom: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    height: "20%",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    height: "18%",
+    backgroundColor: "rgba(0,0,0,0.58)",
   },
   cameraShadeLeft: {
     position: "absolute",
     left: 0,
-    top: "20%",
-    bottom: "20%",
-    width: "15%",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    top: "18%",
+    bottom: "18%",
+    width: "13%",
+    backgroundColor: "rgba(0,0,0,0.58)",
   },
   cameraShadeRight: {
     position: "absolute",
     right: 0,
-    top: "20%",
-    bottom: "20%",
-    width: "15%",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    top: "18%",
+    bottom: "18%",
+    width: "13%",
+    backgroundColor: "rgba(0,0,0,0.58)",
   },
   scannerFrame: {
-    width: "70%",
-    maxWidth: 360,
+    width: "72%",
     aspectRatio: 1,
     position: "relative",
   },
   corner: {
     position: "absolute",
-    width: 38,
-    height: 38,
+    width: 34,
+    height: 34,
     borderColor: "#ff1684",
   },
   cornerTL: {
@@ -595,14 +1032,14 @@ const styles = StyleSheet.create({
   },
   cameraInstruction: {
     position: "absolute",
-    bottom: 36,
-    backgroundColor: "rgba(5,0,8,0.78)",
-    borderRadius: 30,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    bottom: 18,
+    backgroundColor: "rgba(5,0,8,0.82)",
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   cameraInstructionText: {
     color: "#fff",
@@ -610,43 +1047,169 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
   },
-  bottomInfo: {
-    minHeight: 100,
-    paddingHorizontal: 22,
-    paddingVertical: 18,
-    backgroundColor: "#08000c",
+  quickRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
   },
-  bottomTitle: {
+  quickButton: {
+    flex: 1,
+    backgroundColor: "#ff1684",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  quickButtonText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  quickButtonSecondary: {
+    flex: 1,
+    backgroundColor: "#1a0521",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  quickButtonSecondaryText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  manualInput: {
+    width: "100%",
+    backgroundColor: "#1a0521",
+    borderColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderRadius: 14,
+    color: "#fff",
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    fontSize: 15,
+  },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  refreshPill: {
+    backgroundColor: "#1a0521",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  refreshPillText: {
+    color: "#ff1684",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  loadingBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 30,
+  },
+  loadingText: {
+    color: "#c5bacd",
+    marginTop: 10,
+    fontSize: 13,
+  },
+  historyItem: {
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: "#1a0521",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 12,
+    alignItems: "center",
+  },
+  historyBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#18d26b",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyBadgeText: {
     color: "#fff",
     fontWeight: "900",
-    fontSize: 16,
+    fontSize: 20,
   },
-  bottomText: {
-    color: "#988b9f",
+  historyContent: {
+    flex: 1,
+  },
+  historyName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  historyCode: {
+    color: "#ff1684",
+    fontSize: 12,
+    fontWeight: "900",
+    marginTop: 4,
+  },
+  historyMeta: {
+    color: "#b4a9be",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  historyRight: {
+    alignItems: "flex-end",
+    maxWidth: 110,
+  },
+  historyStatus: {
+    color: "#18d26b",
+    fontWeight: "900",
     fontSize: 11,
-    marginTop: 5,
+  },
+  historyTime: {
+    color: "#b4a9be",
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: "right",
+  },
+  emptyBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+  },
+  emptyIcon: {
+    fontSize: 38,
+    marginBottom: 10,
+  },
+  emptyTitle: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 17,
+  },
+  emptyText: {
+    color: "#b5aabf",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 20,
   },
   resultOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.92)",
-  },
-  resultScroll: {
-    flexGrow: 1,
-    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.9)",
     justifyContent: "center",
-    padding: 22,
+    padding: 20,
   },
   resultCard: {
     width: "100%",
-    maxWidth: 470,
+    maxWidth: 460,
+    alignSelf: "center",
     backgroundColor: "#120018",
     borderWidth: 2,
     borderRadius: 26,
-    padding: 26,
+    padding: 24,
     alignItems: "center",
   },
   resultCardValid: {
-    borderColor: "#18c96e",
+    borderColor: "#18d26b",
   },
   resultCardUsed: {
     borderColor: "#f2a51a",
@@ -655,14 +1218,14 @@ const styles = StyleSheet.create({
     borderColor: "#ff5068",
   },
   resultCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     alignItems: "center",
     justifyContent: "center",
   },
   resultCircleValid: {
-    backgroundColor: "#18c96e",
+    backgroundColor: "#18d26b",
   },
   resultCircleUsed: {
     backgroundColor: "#f2a51a",
@@ -672,16 +1235,17 @@ const styles = StyleSheet.create({
   },
   resultIcon: {
     color: "#fff",
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: "900",
   },
   resultTitle: {
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: "900",
     marginTop: 18,
+    textAlign: "center",
   },
   resultTitleValid: {
-    color: "#18c96e",
+    color: "#18d26b",
   },
   resultTitleUsed: {
     color: "#f2a51a",

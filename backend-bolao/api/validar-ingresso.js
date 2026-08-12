@@ -1,5 +1,37 @@
 const { db, admin } = require("../lib/firebaseAdmin");
 
+function getDateFromAny(value) {
+  if (!value) return null;
+
+  if (typeof value.toDate === "function") {
+    return value.toDate();
+  }
+
+  if (value._seconds) {
+    return new Date(Number(value._seconds) * 1000);
+  }
+
+  if (value.seconds) {
+    return new Date(Number(value.seconds) * 1000);
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return null;
+}
+
+function formatDateBR(value) {
+  const date = getDateFromAny(value);
+  if (!date) return "";
+
+  return date.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
 function parseQr(raw) {
   if (!raw) {
     throw new Error("QR vazio.");
@@ -12,12 +44,12 @@ function parseQr(raw) {
 
     if (parsed?.type === "BONDE62_TICKET") {
       return {
-        id: parsed.id ? String(parsed.id) : "",
-        code: parsed.code ? String(parsed.code) : "",
+        id: parsed.id ? String(parsed.id).trim() : "",
+        code: parsed.code ? String(parsed.code).trim() : "",
       };
     }
   } catch {
-    // Continua para formatos antigos.
+    // segue pro próximo formato
   }
 
   if (texto.startsWith("BONDE62:")) {
@@ -27,25 +59,55 @@ function parseQr(raw) {
     };
   }
 
+  if (texto.startsWith("B62-")) {
+    return {
+      id: "",
+      code: texto.trim(),
+    };
+  }
+
   throw new Error("Formato de QR inválido.");
 }
 
-function timestampToText(value) {
-  if (!value) return "";
+function isApproved(data = {}) {
+  const pagamentoStatus = String(data.status || "").toLowerCase();
+  const ingressoStatus = String(data.ingressoStatus || "").toLowerCase();
 
-  let date;
+  return (
+    pagamentoStatus === "approved" ||
+    pagamentoStatus === "paid" ||
+    ingressoStatus === "confirmed"
+  );
+}
 
-  if (typeof value.toDate === "function") {
-    date = value.toDate();
-  } else if (value._seconds) {
-    date = new Date(Number(value._seconds) * 1000);
-  } else {
-    return "";
-  }
+function isUsed(data = {}) {
+  const ingressoStatus = String(data.ingressoStatus || "").toLowerCase();
 
-  return date.toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-  });
+  return (
+    ingressoStatus === "used" ||
+    ingressoStatus === "utilizado" ||
+    Boolean(data.utilizadoEm)
+  );
+}
+
+function buildTicket(docId, data = {}, fallback = {}) {
+  const codigo =
+    data.ingressoCodigo ||
+    fallback.code ||
+    `B62-${String(data.order_nsu || docId).slice(0, 10).toUpperCase()}`;
+
+  return {
+    id: docId,
+    codigo,
+    nome: data.nome || "",
+    email: data.email || "",
+    quantidade: Number(data.quantidade || 1),
+    lote: data.lote || "lote_secreto",
+    valor: Number(data.valorTotal || data.total || 0),
+    status: data.ingressoStatus || "",
+    utilizadoEmTexto: formatDateBR(data.utilizadoEm),
+    criadoEmTexto: formatDateBR(data.criadoEm || data.createdAt || data.atualizadoEm),
+  };
 }
 
 async function acharDocumento(ticketId, ticketCode) {
@@ -83,9 +145,57 @@ async function acharDocumento(ticketId, ticketCode) {
   return null;
 }
 
+async function carregarDashboard() {
+  const snapshot = await db
+    .collection("pagamentos")
+    .where("tipo", "==", "bonde62_ingresso")
+    .limit(500)
+    .get();
+
+  let totalAprovados = 0;
+  let totalValidados = 0;
+
+  const historico = [];
+
+  snapshot.forEach((doc) => {
+    const data = doc.data() || {};
+
+    if (!isApproved(data)) return;
+
+    const quantidade = Number(data.quantidade || 1);
+    totalAprovados += quantidade;
+
+    if (isUsed(data)) {
+      totalValidados += quantidade;
+
+      const usadoEm = getDateFromAny(data.utilizadoEm);
+
+      historico.push({
+        ...buildTicket(doc.id, data),
+        validadoEmTexto: formatDateBR(data.utilizadoEm),
+        validadoEmMs: usadoEm ? usadoEm.getTime() : 0,
+      });
+    }
+  });
+
+  historico.sort((a, b) => b.validadoEmMs - a.validadoEmMs);
+
+  const totalDisponiveis = Math.max(totalAprovados - totalValidados, 0);
+
+  return {
+    summary: {
+      totalAprovados,
+      totalValidados,
+      totalDisponiveis,
+      ultimoValidadoEm: historico[0]?.validadoEmTexto || "",
+    },
+    history: historico.slice(0, 20).map(({ validadoEmMs, ...item }) => item),
+  };
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, X-Validator-Pin"
@@ -95,17 +205,8 @@ module.exports = async function handler(req, res) {
     return res.status(204).send("");
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      success: false,
-      message: "Método não permitido.",
-    });
-  }
-
   try {
-    const pinEsperado = String(
-      process.env.BONDE62_VALIDATOR_PIN || ""
-    ).trim();
+    const pinEsperado = String(process.env.BONDE62_VALIDATOR_PIN || "").trim();
 
     if (!pinEsperado) {
       return res.status(500).json({
@@ -115,7 +216,7 @@ module.exports = async function handler(req, res) {
     }
 
     const pinRecebido = String(
-      req.headers["x-validator-pin"] || ""
+      req.headers["x-validator-pin"] || req.query?.pin || ""
     ).trim();
 
     if (!pinRecebido || pinRecebido !== pinEsperado) {
@@ -125,27 +226,48 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // DASHBOARD / HISTÓRICO
+    if (req.method === "GET") {
+      const dashboard = await carregarDashboard();
+
+      return res.status(200).json({
+        success: true,
+        ...dashboard,
+      });
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({
+        success: false,
+        message: "Método não permitido.",
+      });
+    }
+
     const body =
       typeof req.body === "string"
         ? JSON.parse(req.body)
         : req.body || {};
 
-    let parsed;
+    const codigoManual = String(body.code || body.ticketCode || "").trim();
 
-    try {
-      parsed = parseQr(body.qr);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        status: "invalid",
-        message: "QR Code inválido ou não reconhecido.",
-      });
+    let parsed = {
+      id: "",
+      code: codigoManual,
+    };
+
+    if (!codigoManual) {
+      try {
+        parsed = parseQr(body.qr);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          status: "invalid",
+          message: "QR Code inválido ou não reconhecido.",
+        });
+      }
     }
 
-    const pagamentoRef = await acharDocumento(
-      parsed.id,
-      parsed.code
-    );
+    const pagamentoRef = await acharDocumento(parsed.id, parsed.code);
 
     if (!pagamentoRef) {
       return res.status(404).json({
@@ -155,109 +277,67 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const resultado = await db.runTransaction(
-      async (transaction) => {
-        const snap = await transaction.get(pagamentoRef);
+    const resultado = await db.runTransaction(async (transaction) => {
+      const snap = await transaction.get(pagamentoRef);
 
-        if (!snap.exists) {
-          return {
-            status: "invalid",
-            reason: "not_found",
-          };
-        }
-
-        const data = snap.data();
-
-        if (data.tipo !== "bonde62_ingresso") {
-          return {
-            status: "invalid",
-            reason: "wrong_type",
-            data,
-          };
-        }
-
-        const pagamentoStatus = String(
-          data.status || ""
-        ).toLowerCase();
-
-        const ingressoStatus = String(
-          data.ingressoStatus || ""
-        ).toLowerCase();
-
-        const aprovado =
-          pagamentoStatus === "approved" ||
-          pagamentoStatus === "paid" ||
-          ingressoStatus === "confirmed";
-
-        if (!aprovado) {
-          return {
-            status: "invalid",
-            reason: "not_approved",
-            data,
-          };
-        }
-
-        if (
-          ingressoStatus === "used" ||
-          ingressoStatus === "utilizado" ||
-          data.utilizadoEm
-        ) {
-          return {
-            status: "used",
-            data,
-          };
-        }
-
-        const agora =
-          admin.firestore.FieldValue.serverTimestamp();
-
-        transaction.update(pagamentoRef, {
-          ingressoStatus: "used",
-          utilizadoEm: agora,
-          validadoPor: "portaria",
-          atualizadoEm: agora,
-        });
-
+      if (!snap.exists) {
         return {
-          status: "valid",
-          data: {
-            ...data,
-            ingressoStatus: "used",
-          },
+          status: "invalid",
+          reason: "not_found",
         };
       }
-    );
+
+      const data = snap.data() || {};
+
+      if (data.tipo !== "bonde62_ingresso") {
+        return {
+          status: "invalid",
+          reason: "wrong_type",
+          data,
+        };
+      }
+
+      if (!isApproved(data)) {
+        return {
+          status: "invalid",
+          reason: "not_approved",
+          data,
+        };
+      }
+
+      if (isUsed(data)) {
+        return {
+          status: "used",
+          data,
+        };
+      }
+
+      const agora = admin.firestore.FieldValue.serverTimestamp();
+
+      transaction.update(pagamentoRef, {
+        ingressoStatus: "used",
+        utilizadoEm: agora,
+        validadoPor: "portaria",
+        atualizadoEm: agora,
+      });
+
+      return {
+        status: "valid",
+        data: {
+          ...data,
+          ingressoStatus: "used",
+        },
+      };
+    });
 
     const data = resultado.data || {};
-
-    const codigo =
-      data.ingressoCodigo ||
-      parsed.code ||
-      `B62-${String(
-        data.order_nsu || pagamentoRef.id
-      )
-        .slice(0, 10)
-        .toUpperCase()}`;
-
-    const ticket = {
-      id: pagamentoRef.id,
-      codigo,
-      nome: data.nome || "",
-      email: data.email || "",
-      quantidade: Number(data.quantidade || 1),
-      lote: data.lote || "lote_secreto",
-      utilizadoEmTexto:
-        resultado.status === "used"
-          ? timestampToText(data.utilizadoEm)
-          : "",
-    };
+    const ticket = buildTicket(pagamentoRef.id, data, parsed);
 
     if (resultado.status === "used") {
       return res.status(409).json({
         success: false,
         status: "used",
-        message:
-          "Este ingresso já foi utilizado anteriormente.",
+        message: "Este ingresso já foi utilizado anteriormente.",
         ticket,
       });
     }
