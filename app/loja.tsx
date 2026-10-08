@@ -1,13 +1,13 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-    Image,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    useWindowDimensions,
-    View,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from "react-native";
 
 const principal = require("../assets/images/loja/aspirador-principal.png");
@@ -188,7 +188,7 @@ export default function Loja() {
               </Text>
 
               <View style={styles.priceLine}>
-                <Text style={styles.price}>R$ 99,90</Text>
+                <Text style={styles.price}>R$ 69,90</Text>
 
                 <View style={styles.offerSmall}>
                   <Text style={styles.offerSmallText}>
@@ -546,7 +546,7 @@ export default function Loja() {
             </Text>
 
             <Text style={styles.finalPrice}>
-              R$ 99,90
+              R$ 69,90
             </Text>
 
             <Text style={styles.finalPayment}>

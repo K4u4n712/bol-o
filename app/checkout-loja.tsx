@@ -651,14 +651,14 @@ function ResumoPedido({
           </Text>
         </View>
 
-        <Text style={styles.productPrice}>R$ 99,90</Text>
+        <Text style={styles.productPrice}>R$ 69,90</Text>
       </View>
 
       <View style={styles.summaryDivider} />
 
       <View style={styles.priceRow}>
         <Text style={styles.priceLabel}>Subtotal</Text>
-        <Text style={styles.priceValue}>R$ 99,90</Text>
+        <Text style={styles.priceValue}>R$ 69,90</Text>
       </View>
 
       <View style={styles.priceRow}>
@@ -674,7 +674,7 @@ function ResumoPedido({
           <Text style={styles.totalPayment}>Pagamento via Pix</Text>
         </View>
 
-        <Text style={styles.totalPrice}>R$ 99,90</Text>
+        <Text style={styles.totalPrice}>R$ 69,90</Text>
       </View>
 
       <View style={styles.pixBox}>
@@ -715,7 +715,7 @@ function ResumoPedido({
         ) : (
           <>
             <Text style={styles.payButtonText}>IR PARA O PAGAMENTO</Text>
-            <Text style={styles.payButtonPrice}>R$ 99,90</Text>
+            <Text style={styles.payButtonPrice}>R$ 69,90</Text>
           </>
         )}
       </Pressable>
