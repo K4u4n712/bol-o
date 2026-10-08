@@ -115,6 +115,17 @@ module.exports = async function handler(req, res) {
     const pagoCentavos = centavos(order?.total_paid_amount);
     const statusOrder = String(order?.status || '').toLowerCase();
     const pagamentoAprovado = pagamentos.some((p) => String(p?.status || '').toLowerCase() === 'approved');
+    console.log('Diagnostico AirClean:', {
+  statusOrder,
+  totalPaidAmount: order?.total_paid_amount,
+  pagoCentavos,
+  precoEsperadoCentavos: PRECO_AIRCLEAN_CENTAVOS,
+  pagamentos: pagamentos.map(p => ({
+    status: p.status,
+    amount: p.amount,
+    paid_amount: p.paid_amount,
+  })),
+});
     // Exigir confirmação de pagamento na API, valor integral e status da Order.
     const pago = statusOrder === 'processed' && pagamentoAprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS;
 
