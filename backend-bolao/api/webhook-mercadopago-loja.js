@@ -10,17 +10,37 @@ function centavos(valor) {
   return Number.isFinite(numero) ? Math.round(numero * 100) : null;
 }
 
-function assinaturaValida({ assinatura, requestId, dataId, segredo }) {
-  if (!assinatura || !requestId || !dataId || !segredo) return false;
+function verificarAssinatura({ assinatura, requestId, dataId, segredo }) {
+  const resultado = { valida: false, diagnostico: 'dados_ausentes', formatoCorrespondente: null };
+  if (!assinatura || !requestId || !dataId || !segredo) return resultado;
   const campos = Object.fromEntries(String(assinatura).split(',').map((parte) => {
     const pos = parte.indexOf('=');
     return pos < 0 ? ['', ''] : [parte.slice(0, pos).trim(), parte.slice(pos + 1).trim()];
   }));
-  if (!/^\d+$/.test(campos.ts || '') || !/^[0-9a-f]{64}$/i.test(campos.v1 || '')) return false;
-  const manifesto = `id:${String(dataId).toLowerCase()};request-id:${requestId};ts:${campos.ts};`;
-  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
+  if (!/^\d+$/.test(campos.ts || '') || !/^[0-9a-f]{64}$/i.test(campos.v1 || '')) {
+    return { ...resultado, diagnostico: 'cabecalho_malformado' };
+  }
   const recebido = Buffer.from(campos.v1, 'hex');
-  return recebido.length === esperado.length && crypto.timingSafeEqual(recebido, esperado);
+  // Diagnóstico: testar apenas variantes do identificador, sem aceitar automaticamente
+  // uma variante não documentada. Não registrar chave, HMAC ou request ID.
+  const variantes = [
+    ['minusculo', String(dataId).toLowerCase()],
+    ['original', String(dataId)],
+    ['maiusculo', String(dataId).toUpperCase()],
+  ];
+  let corresponde = null;
+  for (const [nome, id] of variantes) {
+    const manifesto = `id:${id};request-id:${requestId};ts:${campos.ts};`;
+    const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
+    if (recebido.length === esperado.length && crypto.timingSafeEqual(recebido, esperado)) {
+      corresponde = nome;
+    }
+  }
+  return {
+    valida: corresponde === 'minusculo',
+    diagnostico: corresponde ? 'formato_identificado' : 'nenhum_formato_corresponde',
+    formatoCorrespondente: corresponde,
+  };
 }
 
 async function consultarOrder(orderId, token) {
@@ -52,12 +72,19 @@ module.exports = async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const tipo = String(req.query?.type || body?.type || '');
-    const dataId = String(req.query?.['data.id'] || req.query?.data_id || body?.data?.id || '').trim();
-    // Diagnóstico da origem do ID, sem revelar credenciais nem cabeçalhos de assinatura.
+    const idUrl = req.query?.['data.id'];
+    const idUrlAlternativo = req.query?.data_id;
+    const idBody = body?.data?.id;
+    const dataId = String(idUrl || idUrlAlternativo || idBody || '').trim();
+
+    // Diagnóstico limitado: não registrar identificadores completos em produção.
     console.log('Origem ID AirClean:', {
-      idUrl: req.query?.['data.id'] || null,
-      idUrlAlternativo: req.query?.data_id || null,
-      idBody: body?.data?.id || null,
+      temIdUrl: Boolean(idUrl),
+      temIdUrlAlternativo: Boolean(idUrlAlternativo),
+      temIdBody: Boolean(idBody),
+      idsConcordam: [idUrl, idUrlAlternativo, idBody]
+        .filter((valor) => valor !== undefined && valor !== null && valor !== '')
+        .every((valor) => String(valor).trim() === dataId),
     });
 
     if (tipo && tipo !== 'order') return res.status(200).json({ success: true, ignored: true });
@@ -65,16 +92,16 @@ module.exports = async function handler(req, res) {
 
     const assinatura = req.headers['x-signature'];
     const requestId = req.headers['x-request-id'];
+    const verificacao = verificarAssinatura({ assinatura, requestId, dataId, segredo });
     console.log('Diagnostico assinatura AirClean:', {
-      dataId,
       tipo,
       temAssinatura: Boolean(assinatura),
       temRequestId: Boolean(requestId),
       temSegredo: Boolean(segredo),
-      temTimestamp: /(?:^|,)\s*ts=\d+/.test(String(assinatura || '')),
-      temHash: /(?:^|,)\s*v1=[0-9a-f]{64}(?:\s*,|\s*$)/i.test(String(assinatura || '')),
+      diagnostico: verificacao.diagnostico,
+      formatoCorrespondente: verificacao.formatoCorrespondente,
     });
-    if (!assinaturaValida({ assinatura, requestId, dataId, segredo })) {
+    if (!verificacao.valida) {
       console.warn('Webhook AirClean: assinatura inválida.');
       return res.status(401).json({ success: false, message: 'Assinatura inválida.' });
     }
@@ -125,17 +152,13 @@ module.exports = async function handler(req, res) {
     const pagamentos = Array.isArray(order?.transactions?.payments) ? order.transactions.payments : [];
     const pagoCentavos = centavos(order?.total_paid_amount);
     const statusOrder = String(order?.status || '').toLowerCase();
-    const pagamentoAprovado = pagamentos.some((p) => String(p?.status || '').toLowerCase() === 'approved');
+    const pagamentoAprovado = pagamentos.some((p) => ['approved', 'processed'].includes(String(p?.status || '').toLowerCase()));
     console.log('Diagnostico AirClean:', {
       statusOrder,
       totalPaidAmount: order?.total_paid_amount,
       pagoCentavos,
       precoEsperadoCentavos: PRECO_AIRCLEAN_CENTAVOS,
-      pagamentos: pagamentos.map(p => ({
-        status: p.status,
-        amount: p.amount,
-        paid_amount: p.paid_amount,
-      })),
+      statusPagamentos: pagamentos.map(p => String(p?.status || '').toLowerCase()),
     });
     const pago = statusOrder === 'processed' && pagamentoAprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS;
 
@@ -162,7 +185,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, paid: true });
     }
 
-    if (pagamentoAprovado || pagoCentavos > 0) {
+    if (pagamentoAprovado || (pagoCentavos !== null && pagoCentavos > 0)) {
       console.warn('Webhook AirClean: pagamento inconsistente, revisão necessária.', pedidoId);
       await pedidoRef.update({ ...atualizacao, pagamentoStatus: 'revisao_necessaria' });
       return res.status(200).json({ success: true, paid: false, review: true });
