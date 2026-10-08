@@ -44,3 +44,5 @@ app-example
 
 .env
 backend-bolao/.env
+.vercel
+.env*
