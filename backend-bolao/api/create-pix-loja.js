@@ -1,13 +1,13 @@
 const crypto = require("crypto");
 const { db, admin } = require("../lib/firebaseAdmin");
 
-const PRECO_AIRCLEAN = 99.9;
+const PRECO_AIRCLEAN = 69.9;
 const PRODUTO_ID = "airclean-as228";
 const PRODUTO_NOME = "Mini Aspirador AirClean 3 em 1";
 
 // Mantenha true enquanto terminamos e testamos o fluxo.
 // Só mudaremos para false quando o pagamento real estiver validado.
-const TESTE_PIX_MERCADO_PAGO = true;
+const TESTE_PIX_MERCADO_PAGO = process.env.AIRCLEAN_PIX_TEST_MODE !== "false";
 const TESTE_EMAIL = "test_user_br@testuser.com";
 const TESTE_FIRST_NAME = "APRO";
 
@@ -69,7 +69,7 @@ async function consultarOrderMercadoPago(orderId, accessToken) {
   const raw = await response.text();
 console.log("=== MERCADO PAGO CONSULTA ORDER ===");
 console.log("HTTP:", response.status);
-console.log("RESPOSTA:", raw);
+// Não registrar resposta completa: pode conter dados de pagamento.
 console.log("==================================");
 
   let data;
@@ -110,12 +110,12 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN_LOJA;
 
     if (!accessToken) {
       return res.status(500).json({
         success: false,
-        message: "MERCADO_PAGO_ACCESS_TOKEN não configurado.",
+        message: "MERCADO_PAGO_ACCESS_TOKEN_LOJA não configurado.",
       });
     }
 
@@ -350,8 +350,7 @@ module.exports = async function handler(req, res) {
         pagamentoStatus: "checkout_error",
         pedidoStatus: "erro_pagamento",
 
-        erroMercadoPago: mpData,
-        payloadMercadoPago,
+        erroMercadoPago: { statusCode: mpResponse.status, message: String(mpData?.message || "Falha ao criar pagamento.") },
 
         atualizadoEm:
           admin.firestore.FieldValue.serverTimestamp(),
@@ -360,7 +359,7 @@ module.exports = async function handler(req, res) {
       return res.status(mpResponse.status).json({
         success: false,
         message: "Erro ao criar Pix no Mercado Pago.",
-        details: mpData,
+        details: { statusCode: mpResponse.status, message: String(mpData?.message || "Falha ao criar pagamento.") },
       });
     }
 
@@ -446,8 +445,6 @@ module.exports = async function handler(req, res) {
 
       idempotencyKey,
 
-      payloadMercadoPago,
-      respostaMercadoPago: orderFinal,
 
       ...(approved
         ? {
@@ -495,7 +492,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       success: false,
       message: "Erro interno ao criar Pix da loja.",
-      error: String(error),
+      // Erro detalhado apenas no log do servidor.
     });
   }
 };
