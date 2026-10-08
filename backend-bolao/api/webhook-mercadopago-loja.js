@@ -61,6 +61,16 @@ module.exports = async function handler(req, res) {
 
     const assinatura = req.headers['x-signature'];
     const requestId = req.headers['x-request-id'];
+    // Diagnóstico seguro: não registrar segredo, assinatura ou request ID completos.
+    console.log('Diagnostico assinatura AirClean:', {
+      dataId,
+      tipo,
+      temAssinatura: Boolean(assinatura),
+      temRequestId: Boolean(requestId),
+      temSegredo: Boolean(segredo),
+      temTimestamp: /(?:^|,)\s*ts=\d+/.test(String(assinatura || '')),
+      temHash: /(?:^|,)\s*v1=[0-9a-f]{64}(?:\s*,|\s*$)/i.test(String(assinatura || '')),
+    });
     if (!assinaturaValida({ assinatura, requestId, dataId, segredo })) {
       console.warn('Webhook AirClean: assinatura inválida.');
       return res.status(401).json({ success: false, message: 'Assinatura inválida.' });
@@ -116,16 +126,16 @@ module.exports = async function handler(req, res) {
     const statusOrder = String(order?.status || '').toLowerCase();
     const pagamentoAprovado = pagamentos.some((p) => String(p?.status || '').toLowerCase() === 'approved');
     console.log('Diagnostico AirClean:', {
-  statusOrder,
-  totalPaidAmount: order?.total_paid_amount,
-  pagoCentavos,
-  precoEsperadoCentavos: PRECO_AIRCLEAN_CENTAVOS,
-  pagamentos: pagamentos.map(p => ({
-    status: p.status,
-    amount: p.amount,
-    paid_amount: p.paid_amount,
-  })),
-});
+      statusOrder,
+      totalPaidAmount: order?.total_paid_amount,
+      pagoCentavos,
+      precoEsperadoCentavos: PRECO_AIRCLEAN_CENTAVOS,
+      pagamentos: pagamentos.map(p => ({
+        status: p.status,
+        amount: p.amount,
+        paid_amount: p.paid_amount,
+      })),
+    });
     // Exigir confirmação de pagamento na API, valor integral e status da Order.
     const pago = statusOrder === 'processed' && pagamentoAprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS;
 
