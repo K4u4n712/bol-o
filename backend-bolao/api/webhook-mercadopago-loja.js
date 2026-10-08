@@ -17,7 +17,6 @@ function assinaturaValida({ assinatura, requestId, dataId, segredo }) {
     return pos < 0 ? ['', ''] : [parte.slice(0, pos).trim(), parte.slice(pos + 1).trim()];
   }));
   if (!/^\d+$/.test(campos.ts || '') || !/^[0-9a-f]{64}$/i.test(campos.v1 || '')) return false;
-  // O Mercado Pago usa o data.id em letras minúsculas no manifesto da assinatura.
   const manifesto = `id:${String(dataId).toLowerCase()};request-id:${requestId};ts:${campos.ts};`;
   const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
   const recebido = Buffer.from(campos.v1, 'hex');
@@ -54,14 +53,18 @@ module.exports = async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const tipo = String(req.query?.type || body?.type || '');
     const dataId = String(req.query?.['data.id'] || req.query?.data_id || body?.data?.id || '').trim();
+    // Diagnóstico da origem do ID, sem revelar credenciais nem cabeçalhos de assinatura.
+    console.log('Origem ID AirClean:', {
+      idUrl: req.query?.['data.id'] || null,
+      idUrlAlternativo: req.query?.data_id || null,
+      idBody: body?.data?.id || null,
+    });
 
-    // Não processar outros tipos de evento neste endpoint exclusivo de Orders.
     if (tipo && tipo !== 'order') return res.status(200).json({ success: true, ignored: true });
     if (!dataId) return res.status(400).json({ success: false, message: 'Order ID ausente.' });
 
     const assinatura = req.headers['x-signature'];
     const requestId = req.headers['x-request-id'];
-    // Diagnóstico seguro: não registrar segredo, assinatura ou request ID completos.
     console.log('Diagnostico assinatura AirClean:', {
       dataId,
       tipo,
@@ -85,11 +88,9 @@ module.exports = async function handler(req, res) {
     const consulta = await consultarOrder(dataId, token);
     if (!consulta.ok) {
       console.error('Consulta de Order AirClean falhou:', consulta.status, JSON.stringify(consulta.dados));
-      // O simulador pode enviar uma Order fictícia. Nunca alterar pedido nesse caso.
       if (consulta.status === 400 && erroIdInvalido(consulta.dados)) {
         return res.status(200).json({ success: true, ignored: true, reason: 'order_id_rejected_by_provider' });
       }
-      // Falhas transitórias continuam sendo erro para permitir reentrega.
       return res.status(503).json({ success: false, message: 'Não foi possível consultar a Order.' });
     }
 
@@ -136,7 +137,6 @@ module.exports = async function handler(req, res) {
         paid_amount: p.paid_amount,
       })),
     });
-    // Exigir confirmação de pagamento na API, valor integral e status da Order.
     const pago = statusOrder === 'processed' && pagamentoAprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS;
 
     const atualizacao = {
@@ -146,7 +146,6 @@ module.exports = async function handler(req, res) {
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    // Não reverter pedidos já pagos por eventos repetidos ou atrasados.
     if (pedido?.pedidoStatus === 'pago') {
       await pedidoRef.update(atualizacao);
       return res.status(200).json({ success: true, paid: true, duplicate: true });
@@ -163,7 +162,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, paid: true });
     }
 
-    // Um valor divergente ou status inconsistente nunca confirma a venda.
     if (pagamentoAprovado || pagoCentavos > 0) {
       console.warn('Webhook AirClean: pagamento inconsistente, revisão necessária.', pedidoId);
       await pedidoRef.update({ ...atualizacao, pagamentoStatus: 'revisao_necessaria' });
