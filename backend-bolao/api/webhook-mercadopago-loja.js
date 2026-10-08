@@ -132,6 +132,7 @@ module.exports = async function handler(req, res) {
         body?.data?.id ||
         ""
     );
+    console.log("Webhook AirClean - ID recebido:", dataId);
 
     const tipo = String(req.query?.type || body?.type || "");
 
