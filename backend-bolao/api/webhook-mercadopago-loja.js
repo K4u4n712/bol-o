@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { db, admin } = require("../lib/firebaseAdmin");
 
-const PRECO_AIRCLEAN_CENTAVOS = 9990;
+const PRECO_AIRCLEAN_CENTAVOS = 6990;
 
 function valorEmCentavos(valor) {
   const numero = Number(valor);
@@ -111,8 +111,8 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-    const webhookSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
+    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN_LOJA;
+    const webhookSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET_LOJA;
 
     if (!accessToken || !webhookSecret) {
       console.error("Variáveis do Mercado Pago não configuradas.");
@@ -242,7 +242,7 @@ module.exports = async function handler(req, res) {
       quando o Pix foi criado.
     */
     if (
-      pedido?.mercadoPagoOrderId &&
+      !pedido?.mercadoPagoOrderId ||
       String(pedido.mercadoPagoOrderId) !== orderId
     ) {
       console.error("Order ID não corresponde ao pedido:", {
@@ -333,7 +333,9 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (aprovado) {
+    // Nunca confirmar como pago sem conferir o valor efetivamente recebido.
+    const pagoCentavos = valorEmCentavos(order?.total_paid_amount);
+    if (aprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS) {
       await pedidoRef.update({
         ...atualizacaoBase,
         pagamentoStatus: "approved",
@@ -355,6 +357,17 @@ module.exports = async function handler(req, res) {
     /*
       Atualiza o estado real do Mercado Pago, mas NÃO marca como pago.
     */
+    if (aprovado) {
+      console.error("Pagamento aprovado com valor recebido divergente:", {
+        pedidoId,
+        pagoCentavos,
+      });
+      return res.status(409).json({
+        success: false,
+        message: "Valor efetivamente pago não confere.",
+      });
+    }
+
     await pedidoRef.update({
       ...atualizacaoBase,
       pagamentoStatus:
