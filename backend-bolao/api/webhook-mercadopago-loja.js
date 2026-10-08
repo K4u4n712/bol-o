@@ -1,392 +1,162 @@
-const crypto = require("crypto");
-const { db, admin } = require("../lib/firebaseAdmin");
+const crypto = require('crypto');
+const { db, admin } = require('../lib/firebaseAdmin');
 
 const PRECO_AIRCLEAN_CENTAVOS = 6990;
+const ORDER_ID_PATTERN = /^ORD[A-Z0-9]{10,80}$/i;
 
-function valorEmCentavos(valor) {
+function centavos(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
   const numero = Number(valor);
-  if (!Number.isFinite(numero)) return null;
-  return Math.round(numero * 100);
+  return Number.isFinite(numero) ? Math.round(numero * 100) : null;
 }
 
-function extrairAssinatura(xSignature) {
-  const partes = String(xSignature || "").split(",");
-  let ts = "";
-  let v1 = "";
-
-  for (const parte of partes) {
-    const [chave, ...resto] = parte.split("=");
-    const valor = resto.join("=").trim();
-
-    if (chave?.trim() === "ts") ts = valor;
-    if (chave?.trim() === "v1") v1 = valor;
-  }
-
-  return { ts, v1 };
+function assinaturaValida({ assinatura, requestId, dataId, segredo }) {
+  if (!assinatura || !requestId || !dataId || !segredo) return false;
+  const campos = Object.fromEntries(String(assinatura).split(',').map((parte) => {
+    const pos = parte.indexOf('=');
+    return pos < 0 ? ['', ''] : [parte.slice(0, pos).trim(), parte.slice(pos + 1).trim()];
+  }));
+  if (!/^\d+$/.test(campos.ts || '') || !/^[0-9a-f]{64}$/i.test(campos.v1 || '')) return false;
+  // O Mercado Pago usa o data.id em letras minúsculas no manifesto da assinatura.
+  const manifesto = `id:${String(dataId).toLowerCase()};request-id:${requestId};ts:${campos.ts};`;
+  const esperado = crypto.createHmac('sha256', segredo).update(manifesto).digest();
+  const recebido = Buffer.from(campos.v1, 'hex');
+  return recebido.length === esperado.length && crypto.timingSafeEqual(recebido, esperado);
 }
 
-function assinaturaValida({ xSignature, xRequestId, dataId, secret }) {
-  if (!xSignature || !xRequestId || !dataId || !secret) return false;
-
-  const { ts, v1 } = extrairAssinatura(xSignature);
-  if (!ts || !v1) return false;
-
-  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
-
-  const calculada = crypto
-    .createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex");
-
-  try {
-    const recebidaBuffer = Buffer.from(v1, "hex");
-    const calculadaBuffer = Buffer.from(calculada, "hex");
-
-    if (recebidaBuffer.length !== calculadaBuffer.length) return false;
-
-    return crypto.timingSafeEqual(recebidaBuffer, calculadaBuffer);
-  } catch {
-    return false;
-  }
+async function consultarOrder(orderId, token) {
+  const resposta = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'GET',
+    headers: { accept: 'application/json', Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(12000),
+  });
+  const texto = await resposta.text();
+  let dados;
+  try { dados = texto ? JSON.parse(texto) : {}; } catch { dados = {}; }
+  return { ok: resposta.ok, status: resposta.status, dados };
 }
 
-async function consultarOrder(orderId, accessToken) {
-  const response = await fetch(
-    `https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`,
-    {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  const raw = await response.text();
-
-  let data;
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    data = { raw };
-  }
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    data,
-  };
-}
-
-function extrairStatus(order) {
-  const pagamento = order?.transactions?.payments?.[0] || {};
-
-  const orderStatus = String(order?.status || "");
-  const orderStatusDetail = String(order?.status_detail || "");
-  const paymentStatus = String(pagamento?.status || "");
-  const paymentStatusDetail = String(pagamento?.status_detail || "");
-
-  const aprovado =
-    paymentStatus === "approved" ||
-    orderStatus === "approved" ||
-    paymentStatusDetail === "accredited" ||
-    orderStatusDetail === "accredited";
-
-  return {
-    pagamento,
-    orderStatus,
-    orderStatusDetail,
-    paymentStatus,
-    paymentStatusDetail,
-    aprovado,
-  };
+function erroIdInvalido(dados) {
+  return Array.isArray(dados?.errors) && dados.errors.some((e) => e?.code === 'invalid_path_param');
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      success: false,
-      message: "Método não permitido.",
-    });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Método não permitido.' });
 
   try {
-    const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN_LOJA;
-    const webhookSecret = process.env.MERCADO_PAGO_WEBHOOK_SECRET_LOJA;
-
-    if (!accessToken || !webhookSecret) {
-      console.error("Variáveis do Mercado Pago não configuradas.");
-
-      return res.status(500).json({
-        success: false,
-        message: "Configuração do Mercado Pago incompleta.",
-      });
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN_LOJA;
+    const segredo = process.env.MERCADO_PAGO_WEBHOOK_SECRET_LOJA;
+    if (!token || !segredo) {
+      console.error('Configuração do webhook AirClean incompleta.');
+      return res.status(503).json({ success: false, message: 'Configuração incompleta.' });
     }
 
-    const body =
-      typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const tipo = String(req.query?.type || body?.type || '');
+    const dataId = String(req.query?.['data.id'] || req.query?.data_id || body?.data?.id || '').trim();
 
-    const dataId = String(
-      req.query?.["data.id"] ||
-        req.query?.data_id ||
-        body?.data?.id ||
-        ""
-    );
-    console.log("Webhook AirClean - ID recebido:", dataId);
+    // Não processar outros tipos de evento neste endpoint exclusivo de Orders.
+    if (tipo && tipo !== 'order') return res.status(200).json({ success: true, ignored: true });
+    if (!dataId) return res.status(400).json({ success: false, message: 'Order ID ausente.' });
 
-    const tipo = String(req.query?.type || body?.type || "");
-
-    /*
-      Este endpoint pertence somente à integração Orders da loja.
-      Outros tipos de notificação são reconhecidos e ignorados.
-    */
-    if (tipo && tipo !== "order") {
-      return res.status(200).json({
-        success: true,
-        ignored: true,
-      });
+    const assinatura = req.headers['x-signature'];
+    const requestId = req.headers['x-request-id'];
+    if (!assinaturaValida({ assinatura, requestId, dataId, segredo })) {
+      console.warn('Webhook AirClean: assinatura inválida.');
+      return res.status(401).json({ success: false, message: 'Assinatura inválida.' });
     }
 
-    if (!dataId) {
-      return res.status(400).json({
-        success: false,
-        message: "Notificação sem ID da order.",
-      });
+    console.log('Webhook AirClean autenticado; Order ID:', dataId);
+    if (!ORDER_ID_PATTERN.test(dataId)) {
+      console.warn('Webhook AirClean: identificador fora do formato esperado.');
+      return res.status(200).json({ success: true, ignored: true, reason: 'invalid_order_id' });
     }
 
-    const xSignature = req.headers["x-signature"];
-    const xRequestId = req.headers["x-request-id"];
-
-    if (
-      !assinaturaValida({
-        xSignature,
-        xRequestId,
-        dataId,
-        secret: webhookSecret,
-      })
-    ) {
-      console.warn("Webhook Mercado Pago com assinatura inválida.");
-
-      return res.status(401).json({
-        success: false,
-        message: "Assinatura inválida.",
-      });
-    }
-
-    /*
-      Não confiamos no status recebido no webhook.
-      Consultamos a Order diretamente na API do Mercado Pago.
-    */
-    const consulta = await consultarOrder(dataId, accessToken);
-
+    const consulta = await consultarOrder(dataId, token);
     if (!consulta.ok) {
-      console.error(
-        "Falha ao consultar Order do Mercado Pago:",
-        consulta.status,
-        consulta.data
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: "Não foi possível confirmar a order no Mercado Pago.",
-      });
+      console.error('Consulta de Order AirClean falhou:', consulta.status, JSON.stringify(consulta.dados));
+      // O simulador pode enviar uma Order fictícia. Nunca alterar pedido nesse caso.
+      if (consulta.status === 400 && erroIdInvalido(consulta.dados)) {
+        return res.status(200).json({ success: true, ignored: true, reason: 'order_id_rejected_by_provider' });
+      }
+      // Falhas transitórias continuam sendo erro para permitir reentrega.
+      return res.status(503).json({ success: false, message: 'Não foi possível consultar a Order.' });
     }
 
-    const order = consulta.data;
-    const orderId = String(order?.id || dataId);
-    const pedidoId = String(order?.external_reference || "");
-
-    if (!pedidoId) {
-      console.warn("Order sem external_reference:", orderId);
-
-      return res.status(200).json({
-        success: true,
-        ignored: true,
-        message: "Order sem pedido da loja associado.",
-      });
+    const order = consulta.dados;
+    const orderId = String(order?.id || '');
+    const pedidoId = String(order?.external_reference || '');
+    if (orderId !== dataId || !pedidoId) {
+      console.warn('Webhook AirClean: Order sem associação válida.');
+      return res.status(200).json({ success: true, ignored: true });
     }
 
-    const pedidoRef = db.collection("pedidos_loja").doc(pedidoId);
-    const pedidoSnap = await pedidoRef.get();
+    const pedidoRef = db.collection('pedidos_loja').doc(pedidoId);
+    const snap = await pedidoRef.get();
+    if (!snap.exists) return res.status(200).json({ success: true, ignored: true });
+    const pedido = snap.data();
 
-    if (!pedidoSnap.exists) {
-      console.warn("Pedido da loja não encontrado:", pedidoId);
-
-      return res.status(200).json({
-        success: true,
-        ignored: true,
-        message: "Pedido da loja não encontrado.",
-      });
+    if (pedido?.tipo !== 'airclean_produto' ||
+        pedido?.provedorPagamento !== 'mercadopago' ||
+        pedido?.mercadoPagoApi !== 'orders' ||
+        String(pedido?.mercadoPagoOrderId || '') !== orderId) {
+      console.warn('Webhook AirClean: Order não corresponde ao pedido cadastrado.');
+      return res.status(200).json({ success: true, ignored: true });
     }
 
-    const pedido = pedidoSnap.data();
-
-    /*
-      Impede que uma Order de outro fluxo seja usada para alterar
-      um pedido AirClean.
-    */
-    if (
-      pedido?.tipo !== "airclean_produto" ||
-      pedido?.provedorPagamento !== "mercadopago" ||
-      pedido?.mercadoPagoApi !== "orders"
-    ) {
-      console.warn("Pedido incompatível com webhook da loja:", pedidoId);
-
-      return res.status(200).json({
-        success: true,
-        ignored: true,
-      });
+    const valorCobrado = centavos(order?.total_amount);
+    const valorEsperado = Number(pedido?.valorCentavos);
+    if (valorCobrado !== PRECO_AIRCLEAN_CENTAVOS || valorEsperado !== PRECO_AIRCLEAN_CENTAVOS) {
+      console.error('Webhook AirClean: divergência no valor cobrado.', pedidoId);
+      return res.status(409).json({ success: false, message: 'Valor da cobrança divergente.' });
     }
 
-    /*
-      Confere se a Order consultada é exatamente a que foi salva
-      quando o Pix foi criado.
-    */
-    if (
-      !pedido?.mercadoPagoOrderId ||
-      String(pedido.mercadoPagoOrderId) !== orderId
-    ) {
-      console.error("Order ID não corresponde ao pedido:", {
-        pedidoId,
-        esperado: pedido.mercadoPagoOrderId,
-        recebido: orderId,
-      });
+    const pagamentos = Array.isArray(order?.transactions?.payments) ? order.transactions.payments : [];
+    const pagoCentavos = centavos(order?.total_paid_amount);
+    const statusOrder = String(order?.status || '').toLowerCase();
+    const pagamentoAprovado = pagamentos.some((p) => String(p?.status || '').toLowerCase() === 'approved');
+    // Exigir confirmação de pagamento na API, valor integral e status da Order.
+    const pago = statusOrder === 'processed' && pagamentoAprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS;
 
-      return res.status(409).json({
-        success: false,
-        message: "Order não corresponde ao pedido.",
-      });
-    }
-
-    const totalCentavos = valorEmCentavos(order?.total_amount);
-
-    if (
-      totalCentavos !== PRECO_AIRCLEAN_CENTAVOS ||
-      Number(pedido?.valorCentavos) !== PRECO_AIRCLEAN_CENTAVOS
-    ) {
-      console.error("Valor divergente no pagamento AirClean:", {
-        pedidoId,
-        totalCentavos,
-        pedidoCentavos: pedido?.valorCentavos,
-      });
-
-      await pedidoRef.update({
-        pagamentoStatus: "value_mismatch",
-        pedidoStatus: "erro_pagamento",
-        mercadoPagoOrderId: orderId,
-        respostaWebhookMercadoPago: order,
-        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      return res.status(409).json({
-        success: false,
-        message: "Valor da cobrança não corresponde ao pedido.",
-      });
-    }
-
-    const {
-      pagamento,
-      orderStatus,
-      orderStatusDetail,
-      paymentStatus,
-      paymentStatusDetail,
-      aprovado,
-    } = extrairStatus(order);
-
-    const atualizacaoBase = {
-      mercadoPagoOrderId: orderId,
-      mercadoPagoPaymentId: pagamento?.id
-        ? String(pagamento.id)
-        : pedido?.mercadoPagoPaymentId || null,
-
-      mercadoPagoOrderStatus: orderStatus || null,
-      mercadoPagoOrderStatusDetail: orderStatusDetail || null,
-      mercadoPagoPaymentStatus: paymentStatus || null,
-
-      pagamentoStatusDetail:
-        paymentStatusDetail || orderStatusDetail || null,
-
-      ultimaNotificacaoMercadoPago: {
-        id: body?.id || null,
-        action: body?.action || null,
-        type: body?.type || tipo || "order",
-        live_mode:
-          typeof body?.live_mode === "boolean" ? body.live_mode : null,
-        date_created: body?.date_created || null,
-      },
-
-      respostaWebhookMercadoPago: order,
+    const atualizacao = {
+      mercadoPagoOrderStatus: statusOrder || null,
+      mercadoPagoPaymentStatus: pagamentos[0]?.status || null,
+      mercadoPagoPaymentId: pagamentos[0]?.id ? String(pagamentos[0].id) : (pedido?.mercadoPagoPaymentId || null),
       atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    /*
-      Idempotência:
-      se o pedido já estiver pago, uma repetição do webhook não
-      cria uma segunda venda nem volta o status para pending.
-    */
-    if (pedido?.pedidoStatus === "pago") {
-      await pedidoRef.update(atualizacaoBase);
-
-      return res.status(200).json({
-        success: true,
-        paid: true,
-        duplicate: true,
-      });
+    // Não reverter pedidos já pagos por eventos repetidos ou atrasados.
+    if (pedido?.pedidoStatus === 'pago') {
+      await pedidoRef.update(atualizacao);
+      return res.status(200).json({ success: true, paid: true, duplicate: true });
     }
 
-    // Nunca confirmar como pago sem conferir o valor efetivamente recebido.
-    const pagoCentavos = valorEmCentavos(order?.total_paid_amount);
-    if (aprovado && pagoCentavos === PRECO_AIRCLEAN_CENTAVOS) {
+    if (pago) {
       await pedidoRef.update({
-        ...atualizacaoBase,
-        pagamentoStatus: "approved",
-        pedidoStatus: "pago",
+        ...atualizacao,
+        pagamentoStatus: 'approved',
+        pedidoStatus: 'pago',
         pagoEm: admin.firestore.FieldValue.serverTimestamp(),
       });
-
-      console.log("Pagamento AirClean confirmado:", {
-        pedidoId,
-        orderId,
-      });
-
-      return res.status(200).json({
-        success: true,
-        paid: true,
-      });
+      console.log('Pagamento AirClean confirmado:', pedidoId);
+      return res.status(200).json({ success: true, paid: true });
     }
 
-    /*
-      Atualiza o estado real do Mercado Pago, mas NÃO marca como pago.
-    */
-    if (aprovado) {
-      console.error("Pagamento aprovado com valor recebido divergente:", {
-        pedidoId,
-        pagoCentavos,
-      });
-      return res.status(409).json({
-        success: false,
-        message: "Valor efetivamente pago não confere.",
-      });
+    // Um valor divergente ou status inconsistente nunca confirma a venda.
+    if (pagamentoAprovado || pagoCentavos > 0) {
+      console.warn('Webhook AirClean: pagamento inconsistente, revisão necessária.', pedidoId);
+      await pedidoRef.update({ ...atualizacao, pagamentoStatus: 'revisao_necessaria' });
+      return res.status(200).json({ success: true, paid: false, review: true });
     }
 
     await pedidoRef.update({
-      ...atualizacaoBase,
-      pagamentoStatus:
-        paymentStatus || orderStatus || pedido?.pagamentoStatus || "pending",
-      pedidoStatus: "aguardando_pagamento",
+      ...atualizacao,
+      pagamentoStatus: pagamentos[0]?.status || statusOrder || 'pending',
+      pedidoStatus: 'aguardando_pagamento',
     });
-
-    return res.status(200).json({
-      success: true,
-      paid: false,
-      status: paymentStatus || orderStatus || "pending",
-    });
-  } catch (error) {
-    console.error("Erro no webhook Mercado Pago AirClean:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Erro interno ao processar webhook.",
-    });
+    return res.status(200).json({ success: true, paid: false, status: statusOrder || 'pending' });
+  } catch (erro) {
+    console.error('Erro no webhook AirClean:', erro?.message || erro);
+    return res.status(500).json({ success: false, message: 'Erro interno no webhook.' });
   }
 };
