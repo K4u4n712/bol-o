@@ -37,7 +37,7 @@ function verificarAssinatura({ assinatura, requestId, dataId, segredo }) {
     }
   }
   return {
-    valida: corresponde === 'minusculo',
+    valida: corresponde === 'minusculo' || corresponde === 'maiusculo',
     diagnostico: corresponde ? 'formato_identificado' : 'nenhum_formato_corresponde',
     formatoCorrespondente: corresponde,
   };
