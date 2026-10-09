@@ -1,14 +1,15 @@
-import { getApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { browserLocalPersistence, getAuth, onAuthStateChanged, setPersistence, signInWithEmailAndPassword, signOut, type Auth, type User } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-// Conta administrativa exclusiva da AirClean.
-// Esta checagem protege apenas a interface; as APIs futuras também deverão validar o token Firebase no servidor.
+// Acesso exclusivo à interface AirClean. As APIs administrativas DEVEM validar
+// o ID token do Firebase no servidor e conferir este UID antes de ler/alterar dados.
 const ADMIN_UID = 'U2yi9HTIpMWJyuTVLeSJ5vTrDaf1';
+const APP_ADMIN_NOME = 'airclean-admin-isolado';
 
 export default function AdminLoja() {
-  const [auth, setAuth] = useState<ReturnType<typeof getAuth> | null>(null);
+  const [auth, setAuth] = useState<Auth | null>(null);
   const [usuario, setUsuario] = useState<User | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [entrando, setEntrando] = useState(false);
@@ -17,36 +18,51 @@ export default function AdminLoja() {
   const [erro, setErro] = useState('');
 
   useEffect(() => {
+    let ativo = true;
     let cancelar: (() => void) | undefined;
     try {
-      const instancia = getAuth(getApp());
+      // Um Firebase App nomeado tem uma sessão Auth independente da sessão do bolão.
+      const existente = getApps().find((app) => app.name === APP_ADMIN_NOME);
+      const appAdmin = existente ?? initializeApp(getApp().options, APP_ADMIN_NOME);
+      const instancia = getAuth(appAdmin);
       setAuth(instancia);
+      // Configura persistência para novos logins; não reinicializa Auth existente.
+      setPersistence(instancia, browserLocalPersistence).catch((e) => {
+        console.warn('AirClean: persistência local indisponível:', e);
+      });
       cancelar = onAuthStateChanged(instancia, (u) => {
+        if (!ativo) return;
         setUsuario(u);
         setCarregando(false);
-      }, () => {
+      }, (e) => {
+        if (!ativo) return;
+        console.error('AirClean: falha no observador de autenticação:', e);
         setErro('Não foi possível verificar o login.');
         setCarregando(false);
       });
-    } catch (_) {
+    } catch (e) {
+      console.error('AirClean: falha ao iniciar Firebase:', e);
       setErro('Firebase não inicializado. Verifique a configuração do projeto.');
       setCarregando(false);
     }
-    return () => cancelar?.();
+    return () => { ativo = false; cancelar?.(); };
   }, []);
 
   async function entrar() {
-    if (!auth || entrando) return;
+    if (!auth || entrando || !email.trim() || !senha) return;
     setErro('');
     setEntrando(true);
     try {
+      // Espera a persistência ser aplicada antes de autenticar.
+      await setPersistence(auth, browserLocalPersistence);
       const resultado = await signInWithEmailAndPassword(auth, email.trim(), senha);
       if (resultado.user.uid !== ADMIN_UID) {
         await signOut(auth);
         setErro('Esta conta não tem permissão para administrar a AirClean.');
       }
-    } catch (_) {
-      setErro('Não foi possível entrar. Confira o e-mail e a senha.');
+    } catch (e) {
+      console.error('AirClean: erro de login:', e);
+      setErro('Não foi possível entrar. Confira o e-mail e a senha ou tente novamente.');
     } finally {
       setEntrando(false);
       setSenha('');
@@ -69,7 +85,7 @@ export default function AdminLoja() {
           <Text style={styles.label}>Senha</Text>
           <TextInput style={styles.input} placeholder="Sua senha" placeholderTextColor="#94a3b8" secureTextEntry value={senha} onChangeText={setSenha} onSubmitEditing={entrar} />
           {!!erro && <Text style={styles.erro}>{erro}</Text>}
-          <Pressable onPress={entrar} disabled={entrando || !auth || !email || !senha} style={[styles.botao, (entrando || !auth) && styles.botaoDesabilitado]}>
+          <Pressable onPress={entrar} disabled={entrando || !auth || !email.trim() || !senha} style={[styles.botao, (entrando || !auth || !email.trim() || !senha) && styles.botaoDesabilitado]}>
             <Text style={styles.botaoTexto}>{entrando ? 'Entrando...' : 'Entrar no painel →'}</Text>
           </Pressable>
           <Text style={styles.rodape}>Acesso restrito ao administrador autorizado.</Text>
