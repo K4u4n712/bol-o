@@ -38,6 +38,7 @@ export default function PagamentoLoja() {
   }>();
 
   const pedidoId = parametro(params.pedido_id);
+  const orderId = parametro(params.order_id);
   const qrCode = parametro(params.qr_code);
   const qrCodeBase64 = parametro(params.qr_code_base64);
   const teste = parametro(params.teste) === "1";
@@ -48,15 +49,60 @@ export default function PagamentoLoja() {
   }, [params.valor]);
 
   const [copiado, setCopiado] = useState(false);
+  const [pagamentoAprovado, setPagamentoAprovado] = useState(false);
+  const [erroConsulta, setErroConsulta] = useState(false);
+
+  useEffect(() => {
+    if (!pedidoId || !orderId) return;
+    let ativo = true;
+    let consultando = false;
+    let confirmado = false;
+
+    const consultar = async () => {
+      if (consultando || confirmado || !ativo) return;
+      consultando = true;
+      try {
+        const url = `https://bol-o-rouge.vercel.app/api/status-pix-loja?pedido_id=${encodeURIComponent(pedidoId)}&order_id=${encodeURIComponent(orderId)}`;
+        const resposta = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!resposta.ok) throw new Error(`Consulta HTTP ${resposta.status}`);
+        const dados = await resposta.json();
+        if (!ativo) return;
+        setErroConsulta(false);
+        if (dados?.paid === true && dados?.status === "approved") {
+          confirmado = true;
+          setPagamentoAprovado(true);
+        }
+      } catch (erro) {
+        if (ativo) {
+          setErroConsulta(true);
+          console.warn("AirClean: falha ao consultar o status do Pix", erro);
+        }
+      } finally {
+        consultando = false;
+      }
+    };
+
+    void consultar();
+    const intervalo = setInterval(() => { void consultar(); }, 5000);
+    return () => {
+      ativo = false;
+      clearInterval(intervalo);
+    };
+  }, [pedidoId, orderId]);
   const [segundos, setSegundos] = useState(30 * 60);
 
   useEffect(() => {
+    if (pagamentoAprovado) return;
     const timer = setInterval(() => {
       setSegundos((atual) => (atual > 0 ? atual - 1 : 0));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [pagamentoAprovado]);
 
   async function copiarPix() {
     if (!qrCode) return;
@@ -153,10 +199,14 @@ export default function PagamentoLoja() {
 
             <Text style={styles.eyebrow}>PAGAMENTO VIA PIX</Text>
             <Text style={[styles.title, mobile && styles.titleMobile]}>
-              Falta só o pagamento para confirmar seu AirClean.
+              {pagamentoAprovado
+                ? "Pagamento aprovado! Seu pedido AirClean foi confirmado."
+                : "Falta só o pagamento para confirmar seu AirClean."}
             </Text>
             <Text style={styles.subtitle}>
-              Escaneie o QR Code ou copie o código Pix abaixo.
+              {pagamentoAprovado
+                ? "Recebemos a confirmação do seu Pix. Não é necessário pagar novamente."
+                : "Escaneie o QR Code ou copie o código Pix abaixo."}
             </Text>
 
             {teste && (
@@ -170,19 +220,30 @@ export default function PagamentoLoja() {
 
             <View style={styles.paymentCard}>
               <View style={styles.statusRow}>
-                <View style={styles.statusDot} />
+                <View style={[styles.statusDot, pagamentoAprovado && { backgroundColor: "#16a34a" }]} />
                 <View style={styles.statusTextBox}>
-                  <Text style={styles.statusTitle}>Aguardando pagamento</Text>
+                  <Text style={styles.statusTitle}>
+                    {pagamentoAprovado ? "✓ Pagamento aprovado" : "Aguardando pagamento"}
+                  </Text>
                   <Text style={styles.statusSubtitle}>
-                    A confirmação será feita automaticamente após o Pix.
+                    {pagamentoAprovado
+                      ? "Seu Pix foi confirmado e o pedido está pago."
+                      : erroConsulta
+                        ? "Não foi possível consultar agora. Tentaremos novamente automaticamente."
+                        : "A confirmação será feita automaticamente após o Pix."}
                   </Text>
                 </View>
-                <ActivityIndicator size="small" />
+                {!pagamentoAprovado && <ActivityIndicator size="small" />}
               </View>
 
               <View style={styles.divider} />
 
-              {pixDisponivel ? (
+              {pagamentoAprovado ? (
+                <View style={styles.processingBox}>
+                  <Text style={[styles.processingTitle, { color: "#15803d", marginTop: 0 }]}>✓ Compra confirmada!</Text>
+                  <Text style={styles.processingText}>O pagamento foi aprovado. Guarde o número do pedido para acompanhamento.</Text>
+                </View>
+              ) : pixDisponivel ? (
                 <>
                   <View style={styles.qrArea}>
                     {qrSource ? (
@@ -304,12 +365,12 @@ export default function PagamentoLoja() {
 
               <Text style={styles.paymentMethod}>Pagamento via Pix</Text>
 
-              <View style={styles.expirationBox}>
+              {!pagamentoAprovado && <View style={styles.expirationBox}>
                 <Text style={styles.expirationLabel}>Tempo da cobrança</Text>
                 <Text style={styles.expirationTime}>
                   {formatarTempo(segundos)}
                 </Text>
-              </View>
+              </View>}
 
               {pedidoId ? (
                 <Text style={styles.orderId}>
