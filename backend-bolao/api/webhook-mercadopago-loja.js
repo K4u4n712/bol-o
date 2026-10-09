@@ -185,7 +185,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, paid: true });
     }
 
-    if (pagamentoAprovado || (pagoCentavos !== null && pagoCentavos > 0)) {
+    if (pagamentoAprovado || (statusOrder === 'processed' && pagoCentavos !== PRECO_AIRCLEAN_CENTAVOS)) {
       console.warn('Webhook AirClean: pagamento inconsistente, revisão necessária.', pedidoId);
       await pedidoRef.update({ ...atualizacao, pagamentoStatus: 'revisao_necessaria' });
       return res.status(200).json({ success: true, paid: false, review: true });
