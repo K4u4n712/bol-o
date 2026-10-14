@@ -44,8 +44,8 @@ export default function PagamentoLoja() {
   const teste = parametro(params.teste) === "1";
 
   const valor = useMemo(() => {
-    const numero = Number(parametro(params.valor) || "99.90");
-    return Number.isFinite(numero) ? numero : 99.9;
+    const numero = Number(parametro(params.valor) || "69.90");
+    return Number.isFinite(numero) ? numero : 69.9;
   }, [params.valor]);
 
   const [copiado, setCopiado] = useState(false);

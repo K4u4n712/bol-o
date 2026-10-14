@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 // Firebase Auth independente do login do bolão/Bonde62.
@@ -8,6 +8,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 // APIs administrativas devem validar o ID token e o UID no servidor.
 const ADMIN_UID = 'U2yi9HTIpMWJyuTVLeSJ5vTrDaf1';
 const APP_ADMIN_NAME = 'airclean-admin-isolado';
+const API = 'https://bol-o-rouge.vercel.app/api/admin-airclean';
+type Pedido = { id:string; cliente?:{nome?:string;email?:string;telefone?:string}; entrega?:{rua?:string;numero?:string;bairro?:string;cidade?:string;estado?:string;cep?:string}; produto?:{nome?:string;quantidade?:number}; valorReais?:number; pedidoStatus?:string; pagamentoStatus?:string; statusEntrega?:string; codigoRastreio?:string; transportadora?:string; observacao?:string; criadoEm?:string; };
+const etapas = ['novo','preparando','enviado','entregue','cancelado'];
 
 type AuthInstance = ReturnType<typeof getAuth>;
 
@@ -28,6 +31,13 @@ export default function AdminLoja() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
+  const [pedidos,setPedidos] = useState<Pedido[]>([]);
+  const [carregandoPedidos,setCarregandoPedidos] = useState(false);
+  const [filtro,setFiltro] = useState('todos');
+  const [busca,setBusca] = useState('');
+  const [salvando,setSalvando] = useState('');
+  const [aviso,setAviso] = useState('');
+  const [limite,setLimite] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -57,6 +67,33 @@ export default function AdminLoja() {
     };
   }, []);
 
+  async function carregarPedidos() {
+    if (!auth?.currentUser || auth.currentUser.uid !== ADMIN_UID) return;
+    setCarregandoPedidos(true);setAviso('');
+    try {
+      const token=await auth.currentUser.getIdToken();
+      const resposta=await fetch(API,{headers:{Authorization:`Bearer ${token}`}});
+      const dados=await resposta.json();
+      if(!resposta.ok) throw new Error(dados.error||'Falha ao buscar pedidos');
+      setPedidos(dados.pedidos||[]);setLimite(Boolean(dados.limitado));
+    } catch(e:any) {setAviso(e?.message||'Erro ao carregar pedidos');}
+    finally {setCarregandoPedidos(false);}
+  }
+  useEffect(()=>{if(usuario?.uid===ADMIN_UID) void carregarPedidos();},[usuario,auth]);
+  const filtrados=useMemo(()=>pedidos.filter(p=>(filtro==='todos'||(filtro==='pagos'?p.pedidoStatus==='pago':filtro==='pendentes'?p.pedidoStatus!=='pago':p.statusEntrega===filtro))&&`${p.id} ${p.cliente?.nome||''} ${p.cliente?.email||''}`.toLowerCase().includes(busca.toLowerCase())),[pedidos,filtro,busca]);
+  const pagos=pedidos.filter(p=>p.pedidoStatus==='pago');
+  const receita=pagos.reduce((n,p)=>n+Number(p.valorReais||0),0);
+  async function salvar(id:string,alteracoes:Record<string,string>) {
+    if(!auth?.currentUser) return;
+    setSalvando(id);setAviso('');
+    try {
+      const token=await auth.currentUser.getIdToken();
+      const resposta=await fetch(API,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({id,...alteracoes})});
+      const dados=await resposta.json();if(!resposta.ok)throw new Error(dados.error||'Não foi possível salvar');
+      setPedidos(anteriores=>anteriores.map(p=>p.id===id?{...p,...alteracoes}:p));
+    } catch(e:any){setAviso(e?.message||'Erro ao salvar');} finally{setSalvando('');}
+  }
+  function editar(id:string,chave:keyof Pedido,valor:string){setPedidos(lista=>lista.map(p=>p.id===id?{...p,[chave]:valor}:p));}
   async function entrar() {
     if (!auth || entrando || !email.trim() || !senha) return;
     setErro('');
@@ -120,21 +157,34 @@ export default function AdminLoja() {
         <View><Text style={styles.marca}>AirClean <Text style={styles.azul}>Admin</Text></Text><Text style={styles.subtitulo}>Painel de controle da loja</Text></View>
         <Pressable onPress={sair} style={styles.sair}><Text style={styles.sairTexto}>Sair</Text></Pressable>
       </View>
-      <Text style={styles.titulo}>Bem-vindo ao seu painel 👋</Text>
-      <Text style={styles.subtitulo}>Seu acesso administrativo está autorizado.</Text>
-      <View style={styles.aviso}><Text style={styles.avisoTitulo}>✓ Acesso autorizado</Text><Text style={styles.avisoTexto}>O login da AirClean está separado do login do bolão. Os dados de vendas ainda não foram conectados.</Text></View>
+      <Text style={styles.titulo}>Visão geral da AirClean</Text>
+      <Text style={styles.subtitulo}>Pedidos registrados no Firebase • Atualize para consultar novas compras</Text>
+      <Pressable onPress={carregarPedidos} style={styles.botao}><Text style={styles.botaoTexto}>{carregandoPedidos?'Carregando...':'↻ Atualizar pedidos'}</Text></Pressable>
+      {!!aviso && <Text style={styles.erro}>{aviso}</Text>}
+      {limite && <Text style={styles.erro}>Exibindo somente os 200 registros mais recentes. Adicione paginação antes de ampliar o volume de vendas.</Text>}
       <View style={styles.grid}>
-        {[
-          ['📊', 'Dashboard', 'Gráficos e indicadores de vendas'],
-          ['🛍️', 'Pedidos', 'Pagos, pendentes e cancelados'],
-          ['📦', 'Produtos', 'Preços e disponibilidade'],
-          ['🚚', 'Entregas', 'Envios e rastreamento'],
-          ['👥', 'Clientes', 'Histórico de compras'],
-          ['⚙️', 'Configurações', 'Dados e segurança da loja'],
-        ].map(([icone, titulo, descricao]) => (
-          <View key={titulo} style={styles.card}><Text style={styles.cardIcone}>{icone}</Text><Text style={styles.cardTitulo}>{titulo}</Text><Text style={styles.cardDescricao}>{descricao}</Text><Text style={styles.emBreve}>Em desenvolvimento</Text></View>
-        ))}
+        {[['📦','Pedidos',pedidos.length],['💰','Faturamento confirmado',receita.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})],['✅','Pagos',pagos.length],['⏳','Aguardando pagamento',pedidos.length-pagos.length]].map(([icone,titulo,valor])=><View key={String(titulo)} style={styles.card}><Text style={styles.cardIcone}>{icone}</Text><Text style={styles.cardTitulo}>{valor}</Text><Text style={styles.cardDescricao}>{titulo}</Text></View>)}
       </View>
+      <Text style={[styles.titulo,{marginTop:30,marginBottom:12}]}>Gerenciar pedidos</Text>
+      <TextInput style={styles.input} placeholder="Buscar por cliente, e-mail ou pedido" value={busca} onChangeText={setBusca}/>
+      <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:18}}>
+        {['todos','pagos','pendentes',...etapas].map(item=><Pressable key={item} onPress={()=>setFiltro(item)} style={[styles.sair,filtro===item&&{backgroundColor:'#dbeafe'}]}><Text style={styles.sairTexto}>{item}</Text></Pressable>)}
+      </View>
+      {filtrados.length===0 && <Text style={styles.subtitulo}>Nenhum pedido encontrado.</Text>}
+      {filtrados.map(p=><View key={p.id} style={[styles.card,{marginBottom:14}]}>
+        <Text style={styles.cardTitulo}>{p.cliente?.nome||'Cliente não informado'} • {(Number(p.valorReais)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</Text>
+        <Text style={styles.cardDescricao}>Pedido: {p.id} | Criado: {p.criadoEm?new Date(p.criadoEm).toLocaleString('pt-BR'):'—'}</Text>
+        <Text style={styles.cardDescricao}>Pagamento: {p.pedidoStatus||'—'} / {p.pagamentoStatus||'—'}</Text>
+        <Text style={styles.cardDescricao}>Produto: {p.produto?.nome||'AirClean'} • Quantidade: {p.produto?.quantidade||1}</Text>
+        <Text style={styles.cardDescricao}>Contato: {p.cliente?.email||'—'} | {p.cliente?.telefone||'—'}</Text>
+        <Text style={styles.cardDescricao}>Entrega: {[p.entrega?.rua,p.entrega?.numero,p.entrega?.bairro,p.entrega?.cidade,p.entrega?.estado,p.entrega?.cep].filter(Boolean).join(', ')}</Text>
+        <Text style={[styles.label,{marginTop:15}]}>Etapa de entrega</Text>
+        <View style={{flexDirection:'row',gap:6,flexWrap:'wrap',marginBottom:12}}>{etapas.map(etapa=><Pressable key={etapa} onPress={()=>salvar(p.id,{statusEntrega:etapa})} disabled={salvando===p.id} style={[styles.sair,p.statusEntrega===etapa&&{backgroundColor:'#bfdbfe'}]}><Text style={styles.sairTexto}>{etapa}</Text></Pressable>)}</View>
+        <Text style={styles.label}>Transportadora</Text><TextInput style={styles.input} value={p.transportadora||''} onChangeText={v=>editar(p.id,'transportadora',v)} placeholder="Transportadora"/>
+        <Text style={styles.label}>Código de rastreio</Text><TextInput style={styles.input} value={p.codigoRastreio||''} onChangeText={v=>editar(p.id,'codigoRastreio',v)} placeholder="Código de rastreamento"/>
+        <Text style={styles.label}>Observações internas</Text><TextInput style={styles.input} value={p.observacao||''} onChangeText={v=>editar(p.id,'observacao',v)} placeholder="Anotações sobre o pedido"/>
+        <Pressable onPress={()=>salvar(p.id,{transportadora:p.transportadora||'',codigoRastreio:p.codigoRastreio||'',observacao:p.observacao||''})} disabled={salvando===p.id} style={styles.botao}><Text style={styles.botaoTexto}>{salvando===p.id?'Salvando...':'Salvar dados de entrega'}</Text></Pressable>
+      </View>)}
     </ScrollView>
   );
 }

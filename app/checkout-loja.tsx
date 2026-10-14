@@ -219,7 +219,7 @@ export default function CheckoutLoja() {
           order_id: String(dados.order_id || ""),
           payment_id: String(dados.payment_id || ""),
           status: String(dados.status || "pending"),
-          valor: String(dados.valor || 99.9),
+          valor: String(dados.valor ?? 69.9),
           qr_code: String(dados.qr_code || ""),
           qr_code_base64: String(dados.qr_code_base64 || ""),
           ticket_url: String(dados.ticket_url || ""),
