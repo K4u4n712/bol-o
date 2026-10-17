@@ -1,7 +1,8 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,9 +24,61 @@ const fotosProduto = [
   { source: soprador, label: "Aspira e sopra" }, { source: beneficios, label: "Benefícios" },
 ];
 
+// Métricas web: ativadas somente após consentimento e configuração do GA4.
+// Defina EXPO_PUBLIC_GA4_MEASUREMENT_ID=G-XXXXXXXXXX no projeto/Vercel.
+const GA_ID = process.env.EXPO_PUBLIC_GA4_MEASUREMENT_ID || "";
+const CONSENT_KEY = "airclean_analytics_consent_v1";
+let analyticsStarted = false;
+
+function iniciarAnalytics() {
+  if (Platform.OS !== "web" || !/^G-[A-Z0-9]+$/.test(GA_ID) || analyticsStarted) return;
+  const browser = globalThis as any;
+  const doc = browser.document;
+  if (!doc) return;
+  analyticsStarted = true;
+  console.log("AirClean Analytics iniciado:", GA_ID);
+  browser.dataLayer = browser.dataLayer || [];
+  browser.gtag = browser.gtag || function (...args: unknown[]) { browser.dataLayer.push(args); };
+  browser.gtag("js", new Date());
+  browser.gtag("config", GA_ID, { send_page_view: true });
+  const script = doc.createElement("script");
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
+  doc.head.appendChild(script);
+  browser.gtag("event", "view_item", {
+    currency: "BRL", value: 69.90,
+    items: [{ item_id: "AS-228", item_name: "Mini Aspirador AirClean 3 em 1", price: 69.90, quantity: 1 }],
+  });
+}
+
+function registrarCheckout() {
+  if (Platform.OS !== "web" || !analyticsStarted) return;
+  const browser = globalThis as any;
+  browser.gtag?.("event", "begin_checkout", {
+    currency: "BRL", value: 69.90,
+    items: [{ item_id: "AS-228", item_name: "Mini Aspirador AirClean 3 em 1", price: 69.90, quantity: 1 }],
+  });
+}
+
 export default function Loja() {
   const { width } = useWindowDimensions();
   const mobile = width < 800;
+  const [consentimento, setConsentimento] = useState<"aceito" | "recusado" | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    try {
+      const escolha = (globalThis as any).localStorage?.getItem(CONSENT_KEY);
+      if (escolha === "aceito" || escolha === "recusado") {
+        setConsentimento(escolha);
+        if (escolha === "aceito") iniciarAnalytics();
+      }
+    } catch { /* Armazenamento indisponível: não rastrear. */ }
+  }, []);
+  const escolherConsentimento = (escolha: "aceito" | "recusado") => {
+    setConsentimento(escolha);
+    try { (globalThis as any).localStorage?.setItem(CONSENT_KEY, escolha); } catch { /* ignore */ }
+    if (escolha === "aceito") iniciarAnalytics();
+  };
 
   const [faqAberto, setFaqAberto] = useState<number | null>(null);
   const [fotoAtual, setFotoAtual] = useState(0);
@@ -35,6 +88,7 @@ export default function Loja() {
   const alternarZoom = (id: string) => setZoomImagem((atual) => atual === id ? null : id);
 
   const comprar = () => {
+    registrarCheckout();
     router.push("/checkout-loja");
   };
 
@@ -644,11 +698,36 @@ export default function Loja() {
           </Text>
         </View>
       </ScrollView>
+      {Platform.OS === "web" && consentimento === null && /^G-[A-Z0-9]+$/.test(GA_ID) && (
+        <View style={styles.analyticsConsent}>
+          <View style={styles.analyticsConsentTextArea}>
+            <Text style={styles.analyticsConsentTitle}>Privacidade e estatísticas</Text>
+            <Text style={styles.analyticsConsentText}>
+              Podemos usar cookies de análise para entender visitas, páginas e regiões aproximadas.
+              Você pode recusar e continuar comprando normalmente.
+            </Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={() => escolherConsentimento("recusado")} style={styles.analyticsConsentSecondary}>
+            <Text style={styles.analyticsConsentSecondaryText}>Recusar</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => escolherConsentimento("aceito")} style={styles.analyticsConsentPrimary}>
+            <Text style={styles.analyticsConsentPrimaryText}>Aceitar análise</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  analyticsConsent: { position: "absolute", bottom: 12, left: 12, right: 12, backgroundColor: "#fff", borderColor: "#dce5f0", borderWidth: 1, borderRadius: 14, padding: 15, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, shadowColor: "#000", shadowOpacity: 0.13, shadowRadius: 12, elevation: 6 },
+  analyticsConsentTextArea: { flexGrow: 1, flexBasis: 230 },
+  analyticsConsentTitle: { fontWeight: "800", fontSize: 14, color: "#14223a" },
+  analyticsConsentText: { color: "#526179", fontSize: 12, marginTop: 4, lineHeight: 18 },
+  analyticsConsentSecondary: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 9, borderWidth: 1, borderColor: "#cbd5e1" },
+  analyticsConsentSecondaryText: { color: "#14223a", fontWeight: "700" },
+  analyticsConsentPrimary: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 9, backgroundColor: "#1677c8" },
+  analyticsConsentPrimaryText: { color: "#fff", fontWeight: "800" },
   root: {
     flex: 1,
     backgroundColor: "#fff",
