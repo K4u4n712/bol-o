@@ -27,6 +27,7 @@ const fotosProduto = [
 // Métricas web: ativadas somente após consentimento e configuração do GA4.
 // Defina EXPO_PUBLIC_GA4_MEASUREMENT_ID=G-XXXXXXXXXX no projeto/Vercel.
 const GA_ID = process.env.EXPO_PUBLIC_GA4_MEASUREMENT_ID || "";
+console.log("GA4 configurado:", GA_ID ? "SIM" : "NÃO");
 const CONSENT_KEY = "airclean_analytics_consent_v1";
 let analyticsStarted = false;
 
