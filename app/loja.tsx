@@ -62,7 +62,12 @@ function registrarCheckout() {
 
 export default function Loja() {
   const { width } = useWindowDimensions();
-  const mobile = width < 800;
+  // Evita diferenças entre o HTML gerado no servidor e a primeira renderização no navegador.
+  const [montado, setMontado] = useState(false);
+  useEffect(() => {
+    setMontado(true);
+  }, []);
+  const mobile = montado ? width < 800 : false;
   const [consentimento, setConsentimento] = useState<"aceito" | "recusado" | null>(null);
   useEffect(() => {
     if (Platform.OS !== "web") return;
