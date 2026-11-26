@@ -220,7 +220,7 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
 
   const content = <>
     {!embedded && <View style={styles.hero}>
-      <Text style={styles.brand}>LAUANA BEATUY STUDIO</Text>
+      <Text style={styles.brand}>Lua_beauty_studio</Text>
       <Text accessibilityRole="header" style={styles.title}>{admin ? 'Painel da agenda' : 'Agende suas unhas em gel'}</Text>
       <Text style={styles.description}>{admin ? 'Gerencie serviços, horários e atendimentos.' : 'Escolha o serviço e reserve um horário disponível.'}</Text>
     </View>}

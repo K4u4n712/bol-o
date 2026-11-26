@@ -3,6 +3,8 @@ import { Image, type ImageSourcePropType } from 'react-native';
 import NailStudio from './NailStudio';
 
 const hero = require('../assets/lauana/hero.jpg');
+const logo = require('../assets/lauana/logo.jpg');
+const instagram = 'https://www.instagram.com/Lua_beauty_studio/';
 
 const models: { name: string; detail: string; alt: string; image: ImageSourcePropType }[] = [
   {
@@ -31,20 +33,27 @@ const tips = [
 export default function NailStudioSite() {
   return <div className="lauana-site">
     <Head>
-      <title>Lauana Beatuy studio | Unhas em gel e agendamento</title>
+      <title>Lua_beauty_studio | Unhas em gel e agendamento</title>
       <meta name="description" content="Veja inspirações de unhas em gel, confira as recomendações da Lauana e reserve seu horário online." />
     </Head>
     <style>{siteCss}</style>
     <header className="lb-header">
       <div className="lb-frame lb-header-inner">
-        <a className="lb-logo" href="#inicio" aria-label="Lauana Beatuy studio, início">
-          <span>Lauana</span><small>Beatuy studio</small>
+        <a className="lb-logo" href="#inicio" aria-label="Lua_beauty_studio, início">
+          <div className="lb-logo-image" aria-hidden="true">
+            <Image source={logo} resizeMode="contain" style={{ width: 108, height: 108 }} />
+          </div>
+          <span>Lua_beauty_studio</span>
         </a>
         <nav className="lb-nav" aria-label="Navegação principal">
           <a href="#modelos">Modelos</a>
           <a href="#recomendacoes">Recomendações</a>
         </nav>
-        <a className="lb-button lb-button-small" href="#agendar">Agendar</a>
+        <div className="lb-header-actions">
+          <a className="lb-instagram" href={instagram} target="_blank" rel="noopener noreferrer"
+            aria-label="Instagram @Lua_beauty_studio">Instagram</a>
+          <a className="lb-button lb-button-small" href="#agendar">Agendar</a>
+        </div>
       </div>
     </header>
     <main id="inicio">
@@ -108,7 +117,9 @@ export default function NailStudioSite() {
     </main>
     <footer className="lb-footer">
       <div className="lb-frame lb-footer-inner">
-        <span>Lauana Beatuy studio</span>
+        <div className="lb-footer-brand"><span>Lua_beauty_studio</span>
+          <a href={instagram} target="_blank" rel="noopener noreferrer">@Lua_beauty_studio</a>
+        </div>
         <a href="/agenda-unhas-admin">Área administrativa</a>
       </div>
     </footer>
@@ -129,9 +140,11 @@ const siteCss = `
 .lauana-site .lb-frame{width:min(1180px,calc(100% - 96px));margin-inline:auto}
 .lauana-site .lb-header{background:#fffaf7;border-bottom:1px solid var(--lb-line)}
 .lauana-site .lb-header-inner,.lauana-site .lb-footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:82px}
-.lauana-site .lb-logo{display:flex;flex-direction:column;align-items:center;text-decoration:none;line-height:1}
-.lauana-site .lb-logo span{font:38px/.94 Georgia,serif;letter-spacing:-.065em}
-.lauana-site .lb-logo small{font-size:11px;letter-spacing:.14em;margin-top:6px}
+.lauana-site .lb-logo,.lauana-site .lb-header-actions{display:flex;align-items:center;gap:10px}
+.lauana-site .lb-logo{text-decoration:none;line-height:1}
+.lauana-site .lb-logo span{font:600 23px/1.12 Georgia,serif;letter-spacing:-.035em}
+.lauana-site .lb-logo-image{width:56px;height:58px;flex:none;display:grid;place-content:center;overflow:hidden;mix-blend-mode:multiply}
+.lauana-site .lb-instagram{display:inline-flex;align-items:center;min-height:44px;font-size:14px;font-weight:650;text-underline-offset:4px}
 .lauana-site .lb-nav{display:flex;gap:34px}
 .lauana-site .lb-nav a,.lauana-site .lb-footer a{font-size:14px;text-decoration:none}
 .lauana-site .lb-nav a:hover,.lauana-site .lb-footer a:hover{text-decoration:underline}
@@ -170,13 +183,17 @@ const siteCss = `
 .lauana-site .lb-button{border-radius:12px}
 .lauana-site .lb-footer{border-top:1px solid var(--lb-line)}
 .lauana-site .lb-footer-inner span{font:22px/1.2 Georgia,serif}
+.lauana-site .lb-footer-brand{display:grid;gap:6px;padding-block:12px}
+.lauana-site .lb-footer-brand a{color:var(--lb-accent)}
 @media(max-width:900px){.lauana-site .lb-frame{width:calc(100% - 48px)}.lauana-site .lb-hero{gap:24px;padding:26px}.lauana-site .lb-gallery{gap:16px}}
 @media(max-width:700px){
   .lauana-site{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
   .lauana-site .lb-frame{width:calc(100% - 32px)}
   .lauana-site .lb-header-inner{min-height:60px}
   .lauana-site .lb-nav,.lauana-site .lb-header .lb-button,.lauana-site .lb-hero .lb-text-link{display:none}
-  .lauana-site .lb-logo span{font-size:31px}
+  .lauana-site .lb-header-inner{gap:8px}
+  .lauana-site .lb-logo{gap:5px}
+  .lauana-site .lb-logo span{font-size:clamp(16px,4.8vw,22px)}
   .lauana-site .lb-hero{display:flex;position:relative;isolation:isolate;align-items:flex-end;min-height:385px;padding:22px;margin-block:12px 24px;overflow:hidden;border-radius:22px}
   .lauana-site .lb-hero-image{position:absolute;z-index:-2;inset:0;height:100%;border-radius:0}
   .lauana-site .lb-hero::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,#24111d00 5%,#24111d66 34%,#24111ded 78%)}
@@ -191,7 +208,7 @@ const siteCss = `
   .lauana-site .lb-model figcaption{padding:0}
   .lauana-site .lb-model h3{font-size:24px}
   .lauana-site .lb-model p{font-size:15px}
-  .lauana-site .lb-footer a{max-width:110px;text-align:right}
+  .lauana-site .lb-footer-inner>a{max-width:110px;text-align:right}
   .lauana-site .lb-mobile-nav{position:fixed;z-index:5;bottom:0;left:0;right:0;display:grid;grid-template-columns:1fr 1.45fr;align-items:center;gap:12px;padding:9px 16px calc(9px + env(safe-area-inset-bottom));background:#fffaf7;border-top:1px solid var(--lb-line)}
   .lauana-site .lb-mobile-nav a:first-child{text-align:center;font-weight:650;text-decoration:none;padding:12px 5px}
   .lauana-site .lb-mobile-nav .lb-button{min-height:48px}
