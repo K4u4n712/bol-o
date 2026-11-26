@@ -35,12 +35,24 @@ function clock(value) {
   return [Math.floor(value / 60), value % 60].map(part => String(part).padStart(2, '0')).join(':');
 }
 
+function hoursFor(day, date) {
+  const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
+  if (weekday === 0) return { start: '', end: '' };
+  const start = '07:00';
+  const end = weekday === 6 ? '12:00' : '18:00';
+  if (day.start === '' && day.end === '') return { start: '', end: '' };
+  const opening = day.start > start ? day.start : start;
+  const closing = day.end && day.end < end ? day.end : end;
+  return opening < closing ? { start: opening, end: closing } : { start: '', end: '' };
+}
+
 function available(day, service, date) {
-  if (!day.start || !day.end || !service) return [];
+  const { start, end } = hoursFor(day, date);
+  if (!start || !end || !service) return [];
   const now = new Date();
   const earliest = date === dateFormat.format(now) ? minutes(timeFormat.format(now)) : -1;
   const result = [];
-  for (let i = minutes(day.start); i + service.duration <= minutes(day.end); i += 30) {
+  for (let i = minutes(start); i + service.duration <= minutes(end); i += 30) {
     if (i > earliest && !(day.bookings || []).some(item =>
       item.status !== 'cancelado' && i < minutes(item.time) + item.duration &&
       i + service.duration > minutes(item.time))) result.push(clock(i));
@@ -88,13 +100,33 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'GET') {
+      if (mode !== 'admin' && req.query.view === 'calendar') {
+        const now = new Date();
+        const first = dateFormat.format(now);
+        const last = dateFormat.format(new Date(+now + 60 * 86400000));
+        const [config, snapshots] = await Promise.all([
+          settings.get(),
+          days.orderBy(admin.firestore.FieldPath.documentId()).startAt(first).endAt(last).get(),
+        ]);
+        const services = config.data()?.services || defaults;
+        const service = services.find(item => item.id === req.query.service) || services[0];
+        const savedDays = new Map(snapshots.docs.map(doc => [doc.id, doc.data()]));
+        const times = {};
+        const base = +new Date(first + 'T12:00:00Z');
+        for (let offset = 0; offset <= 60; offset++) {
+          const day = new Date(base + offset * 86400000).toISOString().slice(0, 10);
+          const slots = available(savedDays.get(day) || {}, service, day);
+          if (slots.length) times[day] = slots;
+        }
+        return res.json({ services, service: service.id, first, last, times });
+      }
       validateDate(date, mode !== 'admin');
       const [config, snapshot] = await Promise.all([settings.get(), days.doc(date).get()]);
       const services = config.data()?.services || defaults;
       const day = snapshot.data() || {};
       if (mode === 'admin') {
         const bookings = (day.bookings || []).map(({ contact, ...item }) => ({ ...item, ...reveal(contact) }));
-        return res.json({ services, bookings, start: day.start || '', end: day.end || '' });
+        return res.json({ services, bookings, ...hoursFor(day, date) });
       }
       const service = services.find(item => item.id === req.query.service);
       return res.json({ services, times: available(day, service, date) });
@@ -148,6 +180,10 @@ module.exports = async (req, res) => {
         const valid = value => typeof value === 'string' && /^([01]\d|2[0-3]):(00|30)$/.test(value);
         if (!(start === '' && end === '') && (!valid(start) || !valid(end) || start >= end)) {
           fail(400, 'Informe início e fim no formato HH:MM, em intervalos de 30 minutos.');
+        }
+        const normal = hoursFor({}, date);
+        if (start && (!normal.start || start < normal.start || end > normal.end)) {
+          fail(400, normal.start ? `Use horários entre ${normal.start} e ${normal.end}.` : 'O estúdio fecha aos domingos.');
         }
         await ref.set({ start, end }, { merge: true });
       } else if (body.action === 'status') {

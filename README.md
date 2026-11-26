@@ -61,4 +61,4 @@ Antes de publicar:
 - Se o backend for publicado em outro domínio, configure `EXPO_PUBLIC_NAIL_STUDIO_API` no frontend com a origem dele, sem barra final.
 - Depois do deploy dos dois projetos, entre no painel, revise os serviços e abra os dias de atendimento. Teste uma reserva antes de compartilhar o link.
 
-Os dias começam fechados. A página pública oferece reservas para até 60 dias no fuso de São Paulo. O primeiro serviço é Unhas em gel, com duração inicial de 90 minutos, editável no painel.
+A agenda abre de segunda a sexta das 7h às 18h e aos sábados das 7h às 12h, no fuso de São Paulo. Pelo painel, é possível reduzir o expediente ou fechar uma data. O calendário oferece reservas para até 60 dias. O primeiro serviço é Unhas em gel, com duração inicial de 90 minutos, editável no painel.

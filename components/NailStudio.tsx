@@ -8,9 +8,59 @@ import { auth as projectAuth } from '../services/firebaseConfig';
 type Service = { id: string; name: string; duration: number };
 type Booking = { id: string; time: string; service: string; status: string; name: string; phone: string };
 type Day = { services: Service[]; times?: string[]; bookings?: Booking[]; start?: string; end?: string };
+type Availability = { services: Service[]; service: string; first: string; last: string; times: Record<string, string[]> };
 
 const api = (process.env.EXPO_PUBLIC_NAIL_STUDIO_API || 'https://bol-o-rouge.vercel.app') + '/api/agenda-unhas';
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const longDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'UTC' });
+const monthFormat = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+
+function BookingCalendar({ month, value, availability, changeMonth, choose }: {
+  month: string; value: string; availability: Availability | undefined;
+  changeMonth: (value: string) => void; choose: (value: string) => void;
+}) {
+  const base = month || availability?.first.slice(0, 7);
+  if (!base) return null;
+  const [year, number] = base.split('-').map(Number);
+  const first = new Date(Date.UTC(year, number - 1, 1));
+  const offset = (first.getUTCDay() + 6) % 7;
+  const size = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const previous = new Date(Date.UTC(year, number - 2, 1)).toISOString().slice(0, 7);
+  const next = new Date(Date.UTC(year, number, 1)).toISOString().slice(0, 7);
+  return <View style={styles.calendar}>
+    <View style={styles.calendarHeader}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Mês anterior"
+        disabled={!availability || previous < availability.first.slice(0, 7)}
+        style={({ pressed }) => [styles.calendarNav, pressed && styles.disabled]}
+        onPress={() => changeMonth(previous)}><Text style={styles.calendarNavText}>‹</Text></Pressable>
+      <Text accessibilityLiveRegion="polite" style={styles.calendarMonth}>{monthFormat.format(first)}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês"
+        disabled={!availability || next > availability.last.slice(0, 7)}
+        style={({ pressed }) => [styles.calendarNav, pressed && styles.disabled]}
+        onPress={() => changeMonth(next)}><Text style={styles.calendarNavText}>›</Text></Pressable>
+    </View>
+    <View style={styles.calendarGrid}>
+      {weekdays.map(label => <View key={label} style={styles.calendarColumn}><Text style={styles.weekday}>{label}</Text></View>)}
+      {Array.from({ length: offset }, (_, index) => <View key={'blank-' + index} style={styles.calendarColumn} />)}
+      {Array.from({ length: size }, (_, index) => {
+        const date = base + '-' + String(index + 1).padStart(2, '0');
+        const open = Boolean(availability?.times[date]?.length);
+        const selected = value === date && open;
+        return <View key={date} style={styles.calendarColumn}>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel={longDate.format(new Date(date + 'T12:00:00Z')) + (open ? ', disponível' : ', indisponível')}
+            accessibilityState={{ selected, disabled: !open }} disabled={!open}
+            style={[styles.calendarDay, open && styles.openDay, selected && styles.selectedDay]}
+            onPress={() => choose(date)}>
+            <Text style={[styles.calendarDayText, open && styles.openDayText, selected && styles.buttonText]}>{index + 1}</Text>
+          </Pressable>
+        </View>;
+      })}
+    </View>
+    <View style={styles.calendarLegend}><View style={styles.legendDot} /><Text style={styles.weekday}>Dia com horários disponíveis</Text></View>
+  </View>;
+}
 
 function adminAuth() {
   const name = 'nail-studio-admin';
@@ -34,6 +84,7 @@ function Field({ label, value, change, placeholder, secret = false }: {
     <Text style={styles.label}>{label}</Text>
     <TextInput accessibilityLabel={label} style={styles.input} value={value} onChangeText={change}
       placeholder={placeholder} placeholderTextColor="#786574" secureTextEntry={secret}
+      keyboardType={label === 'WhatsApp com DDD' ? 'phone-pad' : label === 'E-mail' ? 'email-address' : 'default'}
       autoCapitalize={label === 'E-mail' || secret ? 'none' : 'sentences'} />
   </View>;
 }
@@ -54,6 +105,9 @@ async function request<T>(query: URLSearchParams, user?: User | null, method = '
 export default function NailStudio({ admin = false, embedded = false }: { admin?: boolean; embedded?: boolean }) {
   const [user, setUser] = useState<User | null>(null);
   const [date, setDate] = useState('');
+  const [month, setMonth] = useState('');
+  const [availability, setAvailability] = useState<Availability>();
+  const [contactStep, setContactStep] = useState(false);
   const [service, setService] = useState('');
   const [time, setTime] = useState('');
   const [day, setDay] = useState<Day>();
@@ -72,11 +126,30 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
   const [saving, setSaving] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
-  useEffect(() => setDate(dateFormat.format(new Date())), []);
+  useEffect(() => { if (admin) setDate(dateFormat.format(new Date())); }, [admin]);
+  useEffect(() => {
+    if (embedded && Platform.OS === 'web' && (contactStep || receipt)) {
+      document.getElementById('lauana-booking-card')?.scrollIntoView({ block: 'start' });
+    }
+  }, [embedded, contactStep, receipt]);
   useEffect(() => admin ? onAuthStateChanged(adminAuth(), setUser) : undefined, [admin]);
   useEffect(() => {
+    if (admin) return;
+    let active = true;
+    setLoading(true);
+    request<Availability>(new URLSearchParams({ view: 'calendar', service })).then(data => {
+      if (!active) return;
+      setAvailability(data);
+      setServices(data.services);
+      setMonth(value => value || data.first.slice(0, 7));
+    }).catch(error => {
+      if (active) setFeedback(error.message);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [admin, service, refresh]);
+  useEffect(() => {
     setDay(undefined);
-    if (admin && !user) return;
+    if (!admin || !user) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
     let active = true;
     setLoading(true);
@@ -87,9 +160,6 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
       setStart(data.start || '');
       setEnd(data.end || '');
       setServices(data.services);
-      if (!admin && !data.services.some(item => item.id === service)) {
-        setService(data.services[0]?.id || '');
-      }
     }).catch(error => {
       if (active) setFeedback(error.message);
     }).finally(() => {
@@ -114,6 +184,10 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
     setFeedback('');
   }
 
+  const chosenService = availability?.services.find(item => item.id === availability.service);
+  const times = availability?.times[date] || [];
+  const formattedDate = date ? longDate.format(new Date(date + 'T12:00:00Z')) : '';
+
   function changeDay(offset: number) {
     const value = new Date(date + 'T12:00:00Z');
     if (!Number.isFinite(+value)) return;
@@ -132,11 +206,12 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
   async function reserve() {
     await run(async () => {
       try {
-        await request(new URLSearchParams(), null, 'POST', { date, service, time, name, phone });
+        await request(new URLSearchParams(), null, 'POST', { date, service: availability?.service, time, name, phone });
         setReceipt(date.split('-').reverse().join('/') + ' às ' + time);
         setName('');
         setPhone('');
       } finally {
+        setContactStep(false);
         setTime('');
         setRefresh(value => value + 1);
       }
@@ -162,14 +237,50 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
       <Text style={styles.heading}>Agendamento confirmado</Text>
       <Text style={styles.description}>{receipt}</Text>
       <Button title="Fazer outro agendamento" action={() => setReceipt('')} />
+    </View> : !admin ? <View style={styles.card}>
+      {contactStep ? <>
+        <Text style={styles.heading}>Seus dados</Text>
+        <Text style={styles.summary}>{chosenService?.name} · {formattedDate} às {time}</Text>
+        <Field label="Seu nome" value={name} change={setName} />
+        <Field label="WhatsApp com DDD" value={phone} change={setPhone} />
+        <Text style={styles.description}>Seu contato será usado para tratar deste atendimento.</Text>
+        <Button title={saving ? 'Confirmando…' : 'Confirmar reserva'} disabled={saving || !name.trim() || !phone.trim()} action={reserve} />
+        <Button title="Alterar data ou horário" secondary disabled={saving} action={() => setContactStep(false)} />
+      </> : <>
+        <Text style={styles.heading}>Escolha o serviço</Text>
+        <View style={styles.row}>{services.map(item =>
+          <Button key={item.id} title={item.name + ' · ' + item.duration + ' min'}
+            secondary={item.id !== (service || availability?.service)}
+            action={() => {
+              if (item.id === availability?.service) return;
+              setService(item.id);
+              setAvailability(undefined);
+              setTime('');
+              setFeedback('');
+            }} />)}</View>
+        <Text style={styles.heading}>Escolha a data</Text>
+        <BookingCalendar month={month} value={date} availability={availability}
+          changeMonth={setMonth} choose={value => { setDate(value); setTime(''); setFeedback(''); }} />
+        {loading && <Text accessibilityLiveRegion="polite" style={styles.description}>Consultando horários…</Text>}
+        {!loading && !availability && feedback && <Button title="Tentar novamente" secondary action={() => {
+          setFeedback('');
+          setRefresh(value => value + 1);
+        }} />}
+        {!loading && availability && Object.keys(availability.times).length === 0 &&
+          <Text style={styles.description}>Sem horários disponíveis nos próximos 60 dias.</Text>}
+        {!loading && availability && date && !times.length &&
+          <Text style={styles.description}>Essa data ficou sem horários disponíveis. Escolha outra no calendário.</Text>}
+        {!loading && date && times.length > 0 && <>
+          <Text style={styles.heading}>Escolha o horário</Text>
+          <Text style={styles.description}>{formattedDate} · Horário de Brasília</Text>
+          <View style={styles.row}>{times.map(item =>
+            <Button key={item} title={item} secondary={item !== time} action={() => setTime(item)} />)}</View>
+          <Button title={time ? 'Continuar às ' + time : 'Continuar'} disabled={!times.includes(time)}
+            action={() => setContactStep(true)} />
+        </>}
+      </>}
     </View> : <>
       <View style={styles.card}>
-        {!admin && <>
-          <Text style={styles.heading}>Serviço</Text>
-          <View style={styles.row}>{(day?.services || services).map(item =>
-            <Button key={item.id} title={item.name + ' · ' + item.duration + ' min'}
-              secondary={item.id !== service} action={() => { setService(item.id); setTime(''); setFeedback(''); }} />)}</View>
-        </>}
         <Text style={styles.heading}>Data</Text>
         <View style={styles.row}>
           <Button title="Dia anterior" secondary disabled={!date || (!admin && date <= dateFormat.format(new Date()))}
@@ -188,18 +299,6 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
               border: '1px solid #d6afc0', borderRadius: 10, color: '#321026', background: '#fff', font: 'inherit' }} />
         </label> : <Field label="Data (AAAA-MM-DD)" value={date} change={chooseDate} placeholder="2026-12-01" />}
         {loading ? <Text style={styles.description}>Consultando agenda…</Text> : null}
-        {!admin && day && <>
-          <Text style={styles.heading}>Horários de Brasília</Text>
-          <View style={styles.row}>{day.times?.map(item =>
-            <Button key={item} title={item} secondary={item !== time} action={() => setTime(item)} />)}</View>
-          {!day.times?.length && <Text style={styles.description}>Sem horários disponíveis nesta data.</Text>}
-          {time ? <>
-            <Field label="Seu nome" value={name} change={setName} />
-            <Field label="WhatsApp com DDD" value={phone} change={setPhone} />
-            <Text style={styles.description}>Seu contato será usado para tratar deste atendimento.</Text>
-            <Button title={'Confirmar às ' + time} disabled={saving || !name.trim() || !phone.trim()} action={reserve} />
-          </> : null}
-        </>}
         {admin && day && <>
           <Text style={styles.heading}>Disponibilidade do dia</Text>
           <Field label="Abertura (HH:MM)" value={start} change={setStart} placeholder="09:00" />
@@ -262,6 +361,22 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
 }
 
 const styles = StyleSheet.create({
+  calendar: { gap: 9 },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calendarMonth: { fontSize: 17, fontWeight: '700', color: '#321c2b', textTransform: 'capitalize' },
+  calendarNav: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  calendarNavText: { color: '#782a4c', fontSize: 31, lineHeight: 36 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarColumn: { width: '14.28%', alignItems: 'stretch', padding: 2 },
+  weekday: { fontSize: 13, color: '#66505d', textAlign: 'center' },
+  calendarDay: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
+  calendarDayText: { fontSize: 16, color: '#796d74' },
+  openDay: { backgroundColor: '#f6e6ee' },
+  openDayText: { color: '#651b39', fontWeight: '700' },
+  selectedDay: { backgroundColor: '#651b39' },
+  calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  legendDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#f0c5d9', borderWidth: 1, borderColor: '#b47793' },
+  summary: { color: '#651b39', backgroundColor: '#f6e6ee', padding: 12, borderRadius: 10, fontSize: 16 },
   page: { backgroundColor: '#fff5f7' },
   embedded: { gap: 12, width: '100%' },
   container: { width: '100%', maxWidth: 780, alignSelf: 'center', gap: 18, padding: 20, paddingBottom: 48 },
