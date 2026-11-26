@@ -1,9 +1,11 @@
 const { db, admin } = require('../lib/firebaseAdmin');
+const nailStudioHandler = require('../lib/nailStudioHandler');
 const ADMIN_UID = process.env.AIRCLEAN_ADMIN_UID;
 const allowedOrigins = (process.env.AIRCLEAN_ADMIN_ORIGINS || 'https://aircleanbrasil.vercel.app').split(',').map(x => x.trim());
 const states = ['novo','preparando','enviado','entregue','cancelado'];
 function serial(v) { if (v && typeof v.toDate === 'function') return v.toDate().toISOString(); if (Array.isArray(v)) return v.map(serial); if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,serial(x)])); return v; }
 module.exports = async (req,res) => {
+ if (req.query.agendaUnhasRoute === '1') return nailStudioHandler(req, res);
  const origin = req.headers.origin;
  if (origin && allowedOrigins.includes(origin)) res.setHeader('Access-Control-Allow-Origin',origin);
  res.setHeader('Vary','Origin'); res.setHeader('Cache-Control','no-store');

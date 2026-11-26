@@ -2,5 +2,11 @@
   "framework": null,
   "installCommand": "npm install",
   "buildCommand": "echo \"Backend sem build\"",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/agenda-unhas",
+      "destination": "/api/admin-airclean?agendaUnhasRoute=1"
+    }
+  ]
 }

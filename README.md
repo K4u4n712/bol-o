@@ -48,3 +48,17 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Agenda de unhas em gel
+
+A página pública fica em `/agenda-unhas` e o painel em `/agenda-unhas-admin`. Ambos são publicados com o frontend Expo. A rota `/api/agenda-unhas` é publicada com o projeto Vercel de `backend-bolao`.
+
+Antes de publicar:
+
+- O painel usa a conta administrativa da AirClean configurada em `AIRCLEAN_ADMIN_UID`. Para trocar de conta, defina `NAIL_STUDIO_ADMIN_UID` no backend da Vercel com o UID de outro usuário do mesmo projeto Firebase.
+- No backend da Vercel, defina `NAIL_STUDIO_CONTACT_KEY` com 32 bytes aleatórios em Base64. Gere essa chave localmente em uma sessão privada e guarde uma cópia segura. Ela é necessária para ler os contatos já registrados.
+- Confira nas regras publicadas do Cloud Firestore que os SDKs clientes não têm acesso aos documentos `nailStudio/settings` e `nailStudio/settings/days/{date}`. Uma permissão ampla que também abranja esses caminhos precisa ser restringida. O backend usa o Firebase Admin para acessar os documentos.
+- Se o backend for publicado em outro domínio, configure `EXPO_PUBLIC_NAIL_STUDIO_API` no frontend com a origem dele, sem barra final.
+- Depois do deploy dos dois projetos, entre no painel, revise os serviços e abra os dias de atendimento. Teste uma reserva antes de compartilhar o link.
+
+Os dias começam fechados. A página pública oferece reservas para até 60 dias no fuso de São Paulo. O primeiro serviço é Unhas em gel, com duração inicial de 90 minutos, editável no painel.
