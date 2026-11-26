@@ -2,7 +2,7 @@ import { Link } from 'expo-router';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { auth as projectAuth } from '../services/firebaseConfig';
 
 type Service = { id: string; name: string; duration: number };
@@ -51,9 +51,9 @@ async function request<T>(query: URLSearchParams, user?: User | null, method = '
   return data;
 }
 
-export default function NailStudio({ admin = false }: { admin?: boolean }) {
+export default function NailStudio({ admin = false, embedded = false }: { admin?: boolean; embedded?: boolean }) {
   const [user, setUser] = useState<User | null>(null);
-  const [date, setDate] = useState(() => dateFormat.format(new Date()));
+  const [date, setDate] = useState('');
   const [service, setService] = useState('');
   const [time, setTime] = useState('');
   const [day, setDay] = useState<Day>();
@@ -72,6 +72,7 @@ export default function NailStudio({ admin = false }: { admin?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
+  useEffect(() => setDate(dateFormat.format(new Date())), []);
   useEffect(() => admin ? onAuthStateChanged(adminAuth(), setUser) : undefined, [admin]);
   useEffect(() => {
     setDay(undefined);
@@ -142,12 +143,12 @@ export default function NailStudio({ admin = false }: { admin?: boolean }) {
     });
   }
 
-  return <ScrollView style={styles.page} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-    <View style={styles.hero}>
-      <Text style={styles.brand}>ESTÚDIO DE UNHAS</Text>
+  const content = <>
+    {!embedded && <View style={styles.hero}>
+      <Text style={styles.brand}>LAUANA BEATUY STUDIO</Text>
       <Text accessibilityRole="header" style={styles.title}>{admin ? 'Painel da agenda' : 'Agende suas unhas em gel'}</Text>
       <Text style={styles.description}>{admin ? 'Gerencie serviços, horários e atendimentos.' : 'Escolha o serviço e reserve um horário disponível.'}</Text>
-    </View>
+    </View>}
     {feedback ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{feedback}</Text> : null}
     {admin && !user ? <View style={styles.card}>
       <Field label="E-mail" value={email} change={setEmail} />
@@ -171,10 +172,21 @@ export default function NailStudio({ admin = false }: { admin?: boolean }) {
         </>}
         <Text style={styles.heading}>Data</Text>
         <View style={styles.row}>
-          <Button title="Dia anterior" secondary action={() => changeDay(-1)} />
-          <Button title="Próximo dia" secondary action={() => changeDay(1)} />
+          <Button title="Dia anterior" secondary disabled={!date || (!admin && date <= dateFormat.format(new Date()))}
+            action={() => changeDay(-1)} />
+          <Button title="Próximo dia" secondary
+            disabled={!date || (!admin && date >= dateFormat.format(new Date(Date.now() + 60 * 86400000)))}
+            action={() => changeDay(1)} />
         </View>
-        <Field label="Data (AAAA-MM-DD)" value={date} change={chooseDate} placeholder="2026-12-01" />
+        {Platform.OS === 'web' ? <label style={{ display: 'grid', gap: 6, color: '#43152f', fontWeight: 600 }}>
+          Data do atendimento
+          <input type="date" value={date}
+            min={admin ? undefined : dateFormat.format(new Date())}
+            max={admin ? undefined : dateFormat.format(new Date(Date.now() + 60 * 86400000))}
+            onChange={event => chooseDate(event.currentTarget.value)}
+            style={{ width: '100%', minHeight: 44, boxSizing: 'border-box', padding: '8px 12px',
+              border: '1px solid #d6afc0', borderRadius: 10, color: '#321026', background: '#fff', font: 'inherit' }} />
+        </label> : <Field label="Data (AAAA-MM-DD)" value={date} change={chooseDate} placeholder="2026-12-01" />}
         {loading ? <Text style={styles.description}>Consultando agenda…</Text> : null}
         {!admin && day && <>
           <Text style={styles.heading}>Horários de Brasília</Text>
@@ -238,15 +250,20 @@ export default function NailStudio({ admin = false }: { admin?: boolean }) {
         </View>
       </>}
     </>}
-    <View style={styles.row}>
+    {!embedded && <View style={styles.row}>
       <Link style={styles.link} href={admin ? './agenda-unhas' : './agenda-unhas-admin'}>{admin ? 'Ver página de agendamento' : 'Área administrativa'}</Link>
       {admin && user && <Button title="Sair" secondary action={() => run(() => signOut(adminAuth()))} />}
-    </View>
+    </View>}
+  </>;
+  if (embedded) return <View style={styles.embedded}>{content}</View>;
+  return <ScrollView style={styles.page} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    {content}
   </ScrollView>;
 }
 
 const styles = StyleSheet.create({
   page: { backgroundColor: '#fff5f7' },
+  embedded: { gap: 12, width: '100%' },
   container: { width: '100%', maxWidth: 780, alignSelf: 'center', gap: 18, padding: 20, paddingBottom: 48 },
   hero: { paddingVertical: 32, gap: 12 },
   brand: { fontSize: 14, letterSpacing: 2.5, fontWeight: '700', color: '#8a3358' },

@@ -1,5 +1,5 @@
-import NailStudio from '../components/NailStudio';
+import NailStudioSite from '../components/NailStudioSite';
 
 export default function AgendaUnhas() {
-  return <NailStudio />;
+  return <NailStudioSite />;
 }
