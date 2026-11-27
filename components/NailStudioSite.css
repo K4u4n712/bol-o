@@ -86,7 +86,7 @@
 .lua-site button,.lua-site a{touch-action:manipulation}
 @media(max-width:700px){
 .lua-site .wrap{padding:0 16px}
-.lua-site nav .wrap{height:54px}
+.lua-site nav{position:static}.lua-site nav .wrap{height:54px}
 .lua-site .hero{padding:56px 0 44px;margin-bottom:28px}
 .lua-site .hero h1{font-size:clamp(46px,15vw,70px);letter-spacing:-2.5px}
 .lua-site .hero p{font-size:16px}
@@ -105,8 +105,8 @@
 .lua-site .box{padding:18px}
 .lua-site .go{padding:19px;font-size:17px}
 .lua-site .faq summary{padding:4px 0}
-.lua-site footer{padding-bottom:110px}
-.lua-site .fab{display:block;position:fixed;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);text-align:center;text-decoration:none;font-weight:800;padding:17px;border-radius:99px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.lua-site footer{padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
+.lua-site .fab{display:block;margin:18px 16px;background:var(--ink);color:var(--bg);text-align:center;text-decoration:none;font-weight:800;padding:17px;border-radius:99px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 }
 .lua-site .hero{background:radial-gradient(ellipse 50% 70% at 50% 0%,rgba(255,46,126,.40),transparent),radial-gradient(ellipse 45% 50% at 50% 100%,rgba(255,190,130,.16),transparent),#0d0a0c;box-shadow:0 0 0 100vmax #0d0a0c;text-align:center;padding:84px 0 76px}
 .lua-site .hero::before{content:"";display:block;width:58px;height:58px;border-radius:50%;margin:0 auto 22px;position:relative;left:-8px;box-shadow:16px 6px 0 0 #f6dcc6;filter:drop-shadow(0 0 14px rgba(255,170,140,.45))}
@@ -183,3 +183,12 @@
 
 .lua-site .reminder-choice { display:flex; align-items:flex-start; gap:10px; padding:14px; background:var(--soft); border-radius:12px; cursor:pointer; font-weight:500 }
 .lua-site .reminder-choice input { flex:none; width:20px; height:20px; margin:0; accent-color:var(--ink) }
+
+.lua-site .deck {touch-action:pan-y pinch-zoom;user-select:none}
+.lua-site .deck .dy {touch-action:pan-y pinch-zoom}
+.lua-site .deck .front {position:relative;cursor:grab}
+.lua-site .deck .front:active {cursor:grabbing}
+.lua-site .deck.settling .mcard {transition:transform .25s ease-out,opacity .25s ease-out}
+.lua-site {overflow-x:hidden}
+@media(max-width:700px){.lua-site{scroll-padding-top:12px}}
+@media(prefers-reduced-motion:reduce){.lua-site .deck.settling .mcard{transition:none}}

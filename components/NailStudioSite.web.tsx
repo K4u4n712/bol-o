@@ -1,9 +1,9 @@
 import Head from 'expo-router/head';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { request, type Availability } from '../services/nailStudio';
+import NailMonthDeck from './NailMonthDeck.web';
 import './NailStudioSite.css';
 
-const months = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const days = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'UTC' });
 const asDate = (day: string) => new Date(day + 'T12:00:00Z');
 const facts = [
@@ -32,7 +32,6 @@ export default function NailStudioSite() {
   const sheet = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const success = useRef<HTMLDivElement>(null);
-  const touch = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -53,16 +52,6 @@ export default function NailStudioSite() {
 
   const chosen = calendar?.services.find(item => item.id === calendar.service);
   const summary = date && time && chosen ? chosen.name + ' · ' + days.format(asDate(date)) + ' às ' + time : '';
-  const start = asDate(month + '-01');
-  const monthEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
-  const firstMonth = calendar?.first.slice(0, 7) || '';
-  const lastMonth = calendar?.last.slice(0, 7) || '';
-  const move = (direction: number) => {
-    if (!calendar || saving) return;
-    const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + direction, 1)).toISOString().slice(0, 7);
-    if (next >= firstMonth && next <= lastMonth) setMonth(next);
-  };
-
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!chosen || !summary || lock.current) return;
@@ -118,26 +107,11 @@ export default function NailStudioSite() {
         <div className="live" role="status"><i/>{calendar ? Object.values(calendar.times).reduce((n,a) => n + a.length, 0) + ' horários livres na agenda' : calendarError || 'Carregando agenda…'}</div>
         {calendarError && <button className="retry" onClick={() => setVersion(v => v + 1)}>Tentar novamente</button>}
         {!time && message && <p role="alert">{message}</p>}
-        {calendar && month && <div className="cal" onTouchStart={e => { touch.current = e.touches[0].clientX; }}
-          onTouchEnd={e => { const delta = e.changedTouches[0].clientX - touch.current; if (Math.abs(delta) > 70) move(delta < 0 ? 1 : -1); }}>
-          <div className="mcard"><div className="mt" aria-live="polite">{months.format(start)}</div>
-            <div className="wk" aria-hidden="true">{Array.from('DSTQQSS', (s,i) => <span key={i}>{s}</span>)}</div>
-            <div className="grid">{Array.from({length:start.getUTCDay()}, (_,i) => <span key={'empty'+i}/>)}
-              {Array.from({length:monthEnd}, (_,i) => {
-                const key = month + '-' + String(i + 1).padStart(2,'0');
-                const open = Boolean(calendar.times[key]?.length);
-                return <button key={key} disabled={!open || saving}
-                  className={'dy' + (!open ? ' off' : '') + (key === calendar.first ? ' today' : '') + (key === date ? ' sel' : '')}
-                  aria-label={days.format(asDate(key))} onClick={() => {
-                    if (key !== date) setTime('');
-                    setDate(key); setReceipt(''); setMessage(''); sheet.current?.showModal();
-                  }}>{i + 1}{open && <i className="dt"/>}</button>;
-              })}
-            </div></div>
-          <div className="navrow"><button className="nav" aria-label="Mês anterior" disabled={saving || month <= firstMonth} onClick={() => move(-1)}>‹</button>
-            <span className="calhint">Deslize ou use as setas</span>
-            <button className="nav" aria-label="Próximo mês" disabled={saving || month >= lastMonth} onClick={() => move(1)}>›</button></div>
-        </div>}
+        {calendar && month && <NailMonthDeck month={month} calendar={calendar} selected={date}
+          disabled={saving} onMonth={setMonth} onDay={key => {
+            if (key !== date) setTime('');
+            setDate(key); setReceipt(''); setMessage(''); sheet.current?.showModal();
+          }} />}
       </section>
       <dialog className="sheet" ref={sheet} aria-labelledby="slot-day">
         <div className="grab"/><button className="x" aria-label="Fechar" onClick={() => sheet.current?.close()}>✕</button>
@@ -162,7 +136,8 @@ export default function NailStudioSite() {
         <details><summary>Posso trocar o horário antes de confirmar?</summary><p>Sim. Volte ao calendário e escolha outro horário antes de enviar a reserva.</p></details>
       </section>
     </div>
-    <footer>🌙 <b>Lua Beauty Studio</b><br/><a href="/agenda-unhas-admin">Área administrativa</a><br/>© Lua Beauty Studio</footer>
     {!time && !receipt && <a className="fab" href="#agendar">Agendar meu horário</a>}
+    <footer>🌙 <b>Lua Beauty Studio</b><br/><a href="/agenda-unhas-admin">Área administrativa</a><br/>© Lua Beauty Studio</footer>
+
   </main>;
 }
