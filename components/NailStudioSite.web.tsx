@@ -1,216 +1,168 @@
 import Head from 'expo-router/head';
-import { Image, type ImageSourcePropType } from 'react-native';
-import NailStudio from './NailStudio';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { request, type Availability } from '../services/nailStudio';
+import './NailStudioSite.css';
 
-const hero = require('../assets/lauana/hero.jpg');
-const logo = require('../assets/lauana/logo.jpg');
-const instagram = 'https://www.instagram.com/Lua_beauty_studio/';
-
-const models: { name: string; detail: string; alt: string; image: ImageSourcePropType }[] = [
-  {
-    name: 'Nude rosado', detail: 'Tom translúcido com brilho delicado.',
-    alt: 'Unhas amendoadas curtas em gel nude rosado sobre linho claro',
-    image: require('../assets/lauana/nude.jpg'),
-  },
-  {
-    name: 'Francesinha', detail: 'Base rosada com pontas brancas finas.',
-    alt: 'Unhas em gel com francesinha branca fina sobre tecido acetinado',
-    image: require('../assets/lauana/francesinha.jpg'),
-  },
-  {
-    name: 'Vinho cereja', detail: 'Cor profunda com acabamento intenso e brilhante.',
-    alt: 'Unhas arredondadas em gel vinho cereja sobre superfície marrom',
-    image: require('../assets/lauana/cereja.jpg'),
-  },
+const months = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const days = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'UTC' });
+const asDate = (day: string) => new Date(day + 'T12:00:00Z');
+const facts = [
+  ['Hora marcada', 'Seu horário é só seu'],
+  ['Atendimento exclusivo', 'Atenção total a você'],
+  ['Acabamento impecável', 'Detalhe em cada unha'],
 ];
-
-const tips = [
-  { title: 'Escolha um modelo', text: 'Salve uma referência de cor, formato ou decoração para mostrar no dia.' },
-  { title: 'Avise se já estiver usando gel', text: 'Conte à Lauana se estiver com gel ou alongamento de outro atendimento. Assim, ela pode orientar sobre a remoção.' },
-  { title: 'Cuide do acabamento', text: 'Evite usar as unhas para abrir embalagens e procure a profissional para fazer a manutenção ou a remoção.' },
+const steps = [
+  ['Escolha o horário', 'Toque em um horário livre na agenda.'],
+  ['Coloque seus dados', 'Só seu nome e WhatsApp.'],
+  ['Confirme no site', 'Confira os dados e receba a confirmação aqui mesmo.'],
 ];
 
 export default function NailStudioSite() {
-  return <div className="lauana-site">
-    <Head>
-      <title>Lua_beauty_studio | Unhas em gel e agendamento</title>
-      <meta name="description" content="Veja inspirações de unhas em gel, confira as recomendações da Lauana e reserve seu horário online." />
-    </Head>
-    <style>{siteCss}</style>
-    <header className="lb-header">
-      <div className="lb-frame lb-header-inner">
-        <a className="lb-logo" href="#inicio" aria-label="Lua_beauty_studio, início">
-          <div className="lb-logo-image" aria-hidden="true">
-            <Image source={logo} resizeMode="contain" style={{ width: 108, height: 108 }} />
-          </div>
-          <span>Lua_beauty_studio</span>
-        </a>
-        <nav className="lb-nav" aria-label="Navegação principal">
-          <a href="#modelos">Modelos</a>
-          <a href="#recomendacoes">Recomendações</a>
-        </nav>
-        <div className="lb-header-actions">
-          <a className="lb-instagram" href={instagram} target="_blank" rel="noopener noreferrer"
-            aria-label="Instagram @Lua_beauty_studio">Instagram</a>
-          <a className="lb-button lb-button-small" href="#agendar">Agendar</a>
-        </div>
-      </div>
-    </header>
-    <main id="inicio">
-      <section className="lb-frame lb-hero" aria-labelledby="lb-hero-title">
-        <div className="lb-hero-copy">
-          <p className="lb-eyebrow">Com Lauana</p>
-          <h1 id="lb-hero-title">Unhas em gel<span> do seu jeito.</span></h1>
-          <p>Escolha seu estilo e reserve seu atendimento online.</p>
-          <div className="lb-hero-actions">
-            <a className="lb-button" href="#agendar">Escolher meu horário</a>
-            <a className="lb-text-link" href="#modelos">Ver modelos</a>
-          </div>
-        </div>
-        <div className="lb-hero-image">
-          <Image source={hero} accessibilityLabel="Unhas amendoadas em gel vinho sobre cetim champanhe" resizeMode="cover"
-            style={{ width: '100%', height: '100%' }} />
-        </div>
-      </section>
-      <section id="agendar" className="lb-booking-section" aria-labelledby="lb-booking-title">
-        <div className="lb-frame lb-booking">
-          <div className="lb-section-heading">
-            <p className="lb-eyebrow">Reserva online</p>
-            <h2 id="lb-booking-title">Seu próximo horário</h2>
-            <p>Toque em uma data disponível, escolha o horário e confirme com seu WhatsApp.</p>
-            <dl className="lb-hours" aria-label="Horário de atendimento">
-              <div><dt>Segunda a sexta</dt><dd>7h às 18h</dd></div>
-              <div><dt>Sábado</dt><dd>7h às 12h</dd></div>
-            </dl>
-          </div>
-          <div id="lauana-booking-card"><NailStudio embedded /></div>
-        </div>
-      </section>
-      <section id="modelos" className="lb-gallery-section" aria-labelledby="lb-gallery-title">
-        <div className="lb-frame">
-          <div className="lb-section-heading">
-            <p className="lb-eyebrow">Inspirações</p>
-            <h2 id="lb-gallery-title">Qual é o seu estilo?</h2>
-            <p>Use os modelos como referência para escolher a cor e o acabamento.</p>
-          </div>
-          <div className="lb-gallery">
-            {models.map(model => <figure className="lb-model" key={model.name}>
-              <div className="lb-model-image"><Image source={model.image} accessibilityLabel={model.alt} resizeMode="cover"
-                style={{ width: '100%', height: '100%' }} /></div>
-              <figcaption><h3>{model.name}</h3><p>{model.detail}</p></figcaption>
-            </figure>)}
-          </div>
-          <p className="lb-caption">Imagens ilustrativas de inspiração.</p>
-        </div>
-      </section>
-      <section id="recomendacoes" className="lb-frame lb-tips" aria-labelledby="lb-tips-title">
-        <div className="lb-section-heading">
-          <p className="lb-eyebrow">Para as clientes</p>
-          <h2 id="lb-tips-title">Antes e depois<br />do atendimento</h2>
-        </div>
-        <div>
-          {tips.map(tip => <article key={tip.title} className="lb-tip">
-            <h3>{tip.title}</h3><p>{tip.text}</p>
-          </article>)}
-        </div>
-      </section>
-    </main>
-    <footer className="lb-footer">
-      <div className="lb-frame lb-footer-inner">
-        <div className="lb-footer-brand"><span>Lua_beauty_studio</span>
-          <a href={instagram} target="_blank" rel="noopener noreferrer">@Lua_beauty_studio</a>
-        </div>
-        <a href="/agenda-unhas-admin">Área administrativa</a>
-      </div>
-    </footer>
-    <nav className="lb-mobile-nav" aria-label="Atalhos">
-      <a href="#modelos">Modelos</a>
-      <a className="lb-button" href="#agendar">Ver horários</a>
-    </nav>
-  </div>;
-}
+  const [calendar, setCalendar] = useState<Availability>();
+  const [service, setService] = useState('');
+  const [month, setMonth] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [version, setVersion] = useState(0);
+  const [calendarError, setCalendarError] = useState('');
+  const [message, setMessage] = useState('');
+  const [receipt, setReceipt] = useState('');
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const sheet = useRef<HTMLDialogElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const success = useRef<HTMLDivElement>(null);
+  const touch = useRef(0);
 
-const siteCss = `
-.lauana-site{--lb-ink:#301b24;--lb-muted:#66535b;--lb-accent:#651b39;--lb-line:#e6d8d7;background:#fbf7f2;color:var(--lb-ink);font:16px/1.55 system-ui,sans-serif;height:100vh;height:100dvh;overflow:auto;overflow-wrap:anywhere}
-.lauana-site *{box-sizing:border-box}
-.lauana-site h1,.lauana-site h2,.lauana-site h3,.lauana-site p,.lauana-site figure{margin:0}
-.lauana-site a{color:inherit}
-.lauana-site a:focus-visible{outline:2px solid var(--lb-accent);outline-offset:5px}
-.lauana-site section[id]{scroll-margin-top:20px}
-.lauana-site .lb-frame{width:min(1180px,calc(100% - 96px));margin-inline:auto}
-.lauana-site .lb-header{background:#fffaf7;border-bottom:1px solid var(--lb-line)}
-.lauana-site .lb-header-inner,.lauana-site .lb-footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:82px}
-.lauana-site .lb-logo,.lauana-site .lb-header-actions{display:flex;align-items:center;gap:10px}
-.lauana-site .lb-logo{text-decoration:none;line-height:1}
-.lauana-site .lb-logo span{font:600 23px/1.12 Georgia,serif;letter-spacing:-.035em}
-.lauana-site .lb-logo-image{width:56px;height:58px;flex:none;display:grid;place-content:center;overflow:hidden;mix-blend-mode:multiply}
-.lauana-site .lb-instagram{display:inline-flex;align-items:center;min-height:44px;font-size:14px;font-weight:650;text-underline-offset:4px}
-.lauana-site .lb-nav{display:flex;gap:34px}
-.lauana-site .lb-nav a,.lauana-site .lb-footer a{font-size:14px;text-decoration:none}
-.lauana-site .lb-nav a:hover,.lauana-site .lb-footer a:hover{text-decoration:underline}
-.lauana-site .lb-button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:12px 23px;background:var(--lb-accent);color:white;text-decoration:none;font-weight:650;border:1px solid var(--lb-accent);border-radius:3px}
-.lauana-site .lb-button:hover{background:#481228}
-.lauana-site .lb-button-small{min-height:42px;padding:8px 20px;font-size:14px}
-.lauana-site .lb-hero{display:grid;grid-template-columns:1fr .94fr;gap:clamp(36px,7vw,110px);align-items:center;padding:44px;min-height:480px;margin-block:24px 30px;background:#381526;color:#fff8f4;border-radius:30px}
-.lauana-site .lb-eyebrow{font-size:13px;font-weight:750;line-height:1.3;letter-spacing:.13em;text-transform:uppercase;color:var(--lb-accent)}
-.lauana-site h1,.lauana-site h2{font-family:Georgia,serif;font-weight:400;letter-spacing:-.045em;line-height:1.04}
-.lauana-site h1{font-size:clamp(56px,7vw,106px);margin-block:16px 22px}
-.lauana-site .lb-hero .lb-eyebrow,.lauana-site h1 span{color:#f4c4cb}
-.lauana-site h1 span{display:block;font-style:italic}
-.lauana-site .lb-hero-copy>p:not(.lb-eyebrow),.lauana-site .lb-section-heading>p:not(.lb-eyebrow){color:var(--lb-muted);max-width:42ch;font-size:18px}
-.lauana-site .lb-hero-copy>p:not(.lb-eyebrow){color:#f6e6eb}
-.lauana-site .lb-hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:20px;margin-top:28px}
-.lauana-site .lb-text-link{font-weight:650;text-underline-offset:5px}
-.lauana-site .lb-hero .lb-button{background:#f8e0e4;border-color:#f8e0e4;color:#4d1630}
-.lauana-site .lb-hero .lb-button:hover{background:#fff5f3}
-.lauana-site .lb-hero-image{height:clamp(355px,36vw,500px);overflow:hidden;background:#6d4d3f;border-radius:18px}
-.lauana-site .lb-gallery-section{padding-block:68px;background:#f3e8e4}
-.lauana-site .lb-section-heading h2{font-size:clamp(40px,5.2vw,69px);margin-block:11px 15px}
-.lauana-site .lb-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:30px}
-.lauana-site .lb-model-image{height:clamp(180px,25vw,330px);overflow:hidden;background:#e1c6bc;border-radius:3px}
-.lauana-site .lb-model figcaption{padding-top:12px}
-.lauana-site .lb-model h3,.lauana-site .lb-tip h3{font:26px/1.15 Georgia,serif}
-.lauana-site .lb-model p,.lauana-site .lb-tip p{margin-top:6px;color:var(--lb-muted)}
-.lauana-site .lb-caption{margin-top:20px;font-size:13px;color:var(--lb-muted)}
-.lauana-site .lb-tips,.lauana-site .lb-booking{display:grid;grid-template-columns:1fr 1.1fr;gap:clamp(26px,6vw,90px);align-items:start;padding-block:70px}
-.lauana-site .lb-tip{padding-block:16px;border-top:1px solid var(--lb-line)}
-.lauana-site .lb-booking-section{background:#f3e8e4}
-.lauana-site .lb-hours{display:grid;gap:9px;margin:22px 0 0;max-width:340px}
-.lauana-site .lb-hours div{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #dbc3cb;padding-top:9px}
-.lauana-site .lb-hours dt{font-weight:650}
-.lauana-site .lb-hours dd{margin:0;color:var(--lb-accent);font-weight:650}
-.lauana-site .lb-mobile-nav{display:none}
-.lauana-site .lb-button{border-radius:12px}
-.lauana-site .lb-footer{border-top:1px solid var(--lb-line)}
-.lauana-site .lb-footer-inner span{font:22px/1.2 Georgia,serif}
-.lauana-site .lb-footer-brand{display:grid;gap:6px;padding-block:12px}
-.lauana-site .lb-footer-brand a{color:var(--lb-accent)}
-@media(max-width:900px){.lauana-site .lb-frame{width:calc(100% - 48px)}.lauana-site .lb-hero{gap:24px;padding:26px}.lauana-site .lb-gallery{gap:16px}}
-@media(max-width:700px){
-  .lauana-site{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-  .lauana-site .lb-frame{width:calc(100% - 32px)}
-  .lauana-site .lb-header-inner{min-height:60px}
-  .lauana-site .lb-nav,.lauana-site .lb-header .lb-button,.lauana-site .lb-hero .lb-text-link{display:none}
-  .lauana-site .lb-header-inner{gap:8px}
-  .lauana-site .lb-logo{gap:5px}
-  .lauana-site .lb-logo span{font-size:clamp(16px,4.8vw,22px)}
-  .lauana-site .lb-hero{display:flex;position:relative;isolation:isolate;align-items:flex-end;min-height:385px;padding:22px;margin-block:12px 24px;overflow:hidden;border-radius:22px}
-  .lauana-site .lb-hero-image{position:absolute;z-index:-2;inset:0;height:100%;border-radius:0}
-  .lauana-site .lb-hero::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,#24111d00 5%,#24111d66 34%,#24111ded 78%)}
-  .lauana-site h1{font-size:clamp(42px,11.5vw,62px);margin-block:7px 10px}
-  .lauana-site .lb-hero-copy>p:not(.lb-eyebrow),.lauana-site .lb-section-heading>p:not(.lb-eyebrow){font-size:16px}
-  .lauana-site .lb-hero-actions{margin-top:16px}
-  .lauana-site .lb-tips,.lauana-site .lb-booking{grid-template-columns:minmax(0,1fr);padding-block:28px;gap:19px}
-  .lauana-site .lb-gallery-section{padding-block:30px}
-  .lauana-site .lb-gallery{grid-template-columns:1fr;gap:16px;margin-top:20px}
-  .lauana-site .lb-model{display:grid;grid-template-columns:105px minmax(0,1fr);align-items:center;gap:14px;background:#fff9f6;padding:9px;border-radius:14px}
-  .lauana-site .lb-model-image{height:102px;border-radius:9px}
-  .lauana-site .lb-model figcaption{padding:0}
-  .lauana-site .lb-model h3{font-size:24px}
-  .lauana-site .lb-model p{font-size:15px}
-  .lauana-site .lb-footer-inner>a{max-width:110px;text-align:right}
-  .lauana-site .lb-mobile-nav{position:fixed;z-index:5;bottom:0;left:0;right:0;display:grid;grid-template-columns:1fr 1.45fr;align-items:center;gap:12px;padding:9px 16px calc(9px + env(safe-area-inset-bottom));background:#fffaf7;border-top:1px solid var(--lb-line)}
-  .lauana-site .lb-mobile-nav a:first-child{text-align:center;font-weight:650;text-decoration:none;padding:12px 5px}
-  .lauana-site .lb-mobile-nav .lb-button{min-height:48px}
+  useEffect(() => {
+    let active = true;
+    setCalendar(undefined);
+    setCalendarError('');
+    request<Availability>(new URLSearchParams({ view: 'calendar', service })).then(data => {
+      if (!active) return;
+      setCalendar(data);
+      setMonth(old => old >= data.first.slice(0, 7) && old <= data.last.slice(0, 7) ? old : data.first.slice(0, 7));
+    }).catch(() => { if (active) setCalendarError('Não foi possível carregar os horários. Tente novamente.'); });
+    return () => { active = false; };
+  }, [service, version]);
+
+  useEffect(() => {
+    if (receipt) success.current?.focus();
+    else if (time) form.current?.scrollIntoView({ block: 'start' });
+  }, [time, receipt]);
+
+  const chosen = calendar?.services.find(item => item.id === calendar.service);
+  const summary = date && time && chosen ? chosen.name + ' · ' + days.format(asDate(date)) + ' às ' + time : '';
+  const start = asDate(month + '-01');
+  const monthEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+  const firstMonth = calendar?.first.slice(0, 7) || '';
+  const lastMonth = calendar?.last.slice(0, 7) || '';
+  const move = (direction: number) => {
+    if (!calendar || saving) return;
+    const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + direction, 1)).toISOString().slice(0, 7);
+    if (next >= firstMonth && next <= lastMonth) setMonth(next);
+  };
+
+  async function reserve(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!chosen || !summary || lock.current) return;
+    const fields = new FormData(event.currentTarget);
+    const name = String(fields.get('name')).trim();
+    const phone = String(fields.get('phone')).replace(/\D/g, '');
+    if (name.length < 2 || !/^\d{10,13}$/.test(phone)) {
+      setMessage('Informe seu nome e um WhatsApp com DDD.');
+      return;
+    }
+    lock.current = true;
+    setSaving(true);
+    setMessage('');
+    try {
+      const result = await request<{ id: string }>(new URLSearchParams(), null, 'POST', {
+        reminderConsent: fields.has('reminderConsent'),
+        service: chosen.id, date, time, name, phone, notes: String(fields.get('notes') || '').trim(),
+      });
+      if (!result.id) throw new Error('A confirmação não foi recebida.');
+      setReceipt(summary + '\nReserva ' + result.id);
+      form.current?.reset();
+      setTime('');
+      setVersion(v => v + 1);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível confirmar a reserva.');
+      if ((error as { status?: number })?.status === 409) {
+        setTime('');
+        setVersion(v => v + 1);
+        document.getElementById('agendar')?.scrollIntoView();
+      }
+    } finally {
+      lock.current = false;
+      setSaving(false);
+    }
+  }
+
+  return <main className="lua-site" lang="pt-BR">
+    <Head><title>Lua Beauty Studio · Nail Designer</title><meta name="theme-color" content="#111111" /></Head>
+    <nav><div className="wrap"><span className="logo">🌙 Lua Beauty Studio</span><a className="cta" href="#agendar">Agendar</a></div></nav>
+    <div className="wrap">
+      <header className="hero"><div className="eyebrow">Nail Designer</div>
+        <h1>Lua <em>Beauty</em> Studio</h1><p>Unhas feitas com arte, cuidado e exclusividade.</p>
+        <div className="btns"><a className="btn f" href="#agendar">Agendar meu horário</a><a className="btn" href="#como">Como funciona</a></div>
+      </header>
+      <div className="facts">{facts.map(([title, detail]) => <div key={title} className="fact"><b>{title}</b><span>{detail}</span></div>)}</div>
+      <section id="como"><h2>Como funciona</h2><p className="lead">Agendar é rápido e simples.</p>
+        <div className="how">{steps.map(([title, detail], index) => <div key={title}><i>{index + 1}</i><b>{title}</b><span>{detail}</span></div>)}</div>
+      </section>
+      <section id="agendar"><h2>Agende seu horário</h2><p className="lead">Toque em uma data para ver os horários livres.</p>
+        {calendar && <label className="service">Serviço<br/><select value={calendar.service} disabled={saving} onChange={e => {
+          setService(e.target.value); setCalendar(undefined); setTime(''); setMessage(''); setReceipt('');
+        }}>{calendar.services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.duration} min</option>)}</select></label>}
+        <div className="live" role="status"><i/>{calendar ? Object.values(calendar.times).reduce((n,a) => n + a.length, 0) + ' horários livres na agenda' : calendarError || 'Carregando agenda…'}</div>
+        {calendarError && <button className="retry" onClick={() => setVersion(v => v + 1)}>Tentar novamente</button>}
+        {!time && message && <p role="alert">{message}</p>}
+        {calendar && month && <div className="cal" onTouchStart={e => { touch.current = e.touches[0].clientX; }}
+          onTouchEnd={e => { const delta = e.changedTouches[0].clientX - touch.current; if (Math.abs(delta) > 70) move(delta < 0 ? 1 : -1); }}>
+          <div className="mcard"><div className="mt" aria-live="polite">{months.format(start)}</div>
+            <div className="wk" aria-hidden="true">{Array.from('DSTQQSS', (s,i) => <span key={i}>{s}</span>)}</div>
+            <div className="grid">{Array.from({length:start.getUTCDay()}, (_,i) => <span key={'empty'+i}/>)}
+              {Array.from({length:monthEnd}, (_,i) => {
+                const key = month + '-' + String(i + 1).padStart(2,'0');
+                const open = Boolean(calendar.times[key]?.length);
+                return <button key={key} disabled={!open || saving}
+                  className={'dy' + (!open ? ' off' : '') + (key === calendar.first ? ' today' : '') + (key === date ? ' sel' : '')}
+                  aria-label={days.format(asDate(key))} onClick={() => {
+                    if (key !== date) setTime('');
+                    setDate(key); setReceipt(''); setMessage(''); sheet.current?.showModal();
+                  }}>{i + 1}{open && <i className="dt"/>}</button>;
+              })}
+            </div></div>
+          <div className="navrow"><button className="nav" aria-label="Mês anterior" disabled={saving || month <= firstMonth} onClick={() => move(-1)}>‹</button>
+            <span className="calhint">Deslize ou use as setas</span>
+            <button className="nav" aria-label="Próximo mês" disabled={saving || month >= lastMonth} onClick={() => move(1)}>›</button></div>
+        </div>}
+      </section>
+      <dialog className="sheet" ref={sheet} aria-labelledby="slot-day">
+        <div className="grab"/><button className="x" aria-label="Fechar" onClick={() => sheet.current?.close()}>✕</button>
+        <h3 id="slot-day">{date && days.format(asDate(date))}</h3><p className="shs">Escolha um horário livre · Horário de Brasília</p>
+        <div className="chips">{calendar?.times[date]?.map(slot => <button className="chip" key={slot} onClick={() => {
+          sheet.current?.close(); setTime(slot); form.current?.scrollIntoView();
+        }}>{slot}<small>Livre</small></button>)}</div>
+      </dialog>
+      <section hidden={!time}><p className="lead">Quase lá! Confirme seus dados</p>
+        <form className="box" ref={form} onSubmit={reserve}><div className="sum">{summary}</div>
+          <div className="row"><div><label htmlFor="nome">Seu nome</label><input id="nome" name="name" autoComplete="name" placeholder="Como posso te chamar?" minLength={2} maxLength={80} required/></div>
+          <div><label htmlFor="zap">WhatsApp com DDD</label><input id="zap" name="phone" type="tel" autoComplete="tel" placeholder="(62) 90000-0000" required/></div></div>
+          <label htmlFor="obs">Observações (opcional)</label><input id="obs" name="notes" maxLength={500} placeholder="Cor, formato, referência…"/>
+          <label className="reminder-choice"><input name="reminderConsent" type="checkbox"/>Autorizo o studio a me enviar um lembrete pelo WhatsApp no dia deste atendimento.</label>
+          {message && <p role="alert">{message}</p>}<button className="go" disabled={saving}>{saving ? 'Confirmando…' : 'Confirmar agendamento'}</button>
+        </form>
+      </section>
+      {receipt && <section><div className="box ok" ref={success} tabIndex={-1}><span aria-hidden="true">💖</span><h2>Agendamento confirmado!</h2><pre>{receipt}</pre></div></section>}
+      <section className="faq"><h2>Dúvidas frequentes</h2><p className="lead">Respostas rápidas.</p>
+        <details><summary>Quanto tempo dura o atendimento?</summary><p>A duração aparece ao lado do nome de cada serviço na agenda.</p></details>
+        <details><summary>Como confirmo meu horário?</summary><p>Escolha a data e o horário, preencha seus dados e toque em Confirmar agendamento. O comprovante aparece nesta página.</p></details>
+        <details><summary>Posso trocar o horário antes de confirmar?</summary><p>Sim. Volte ao calendário e escolha outro horário antes de enviar a reserva.</p></details>
+      </section>
+    </div>
+    <footer>🌙 <b>Lua Beauty Studio</b><br/><a href="/agenda-unhas-admin">Área administrativa</a><br/>© Lua Beauty Studio</footer>
+    {!time && !receipt && <a className="fab" href="#agendar">Agendar meu horário</a>}
+  </main>;
 }
-`;

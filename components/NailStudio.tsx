@@ -1,16 +1,14 @@
+import { request, type Availability, type Service } from '../services/nailStudio';
 import { Link } from 'expo-router';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Switch, StyleSheet, Text, TextInput, View } from 'react-native';
 import { auth as projectAuth } from '../services/firebaseConfig';
 
-type Service = { id: string; name: string; duration: number };
-type Booking = { id: string; time: string; service: string; status: string; name: string; phone: string };
+type Booking = { id: string; time: string; service: string; status: string; name: string; phone: string; notes?: string; reminderConsent?: boolean };
 type Day = { services: Service[]; times?: string[]; bookings?: Booking[]; start?: string; end?: string };
-type Availability = { services: Service[]; service: string; first: string; last: string; times: Record<string, string[]> };
 
-const api = (process.env.EXPO_PUBLIC_NAIL_STUDIO_API || 'https://bol-o-rouge.vercel.app') + '/api/agenda-unhas';
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
 const longDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'UTC' });
 const monthFormat = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -89,18 +87,7 @@ function Field({ label, value, change, placeholder, secret = false }: {
   </View>;
 }
 
-async function request<T>(query: URLSearchParams, user?: User | null, method = 'GET', body?: object): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (user) headers.Authorization = 'Bearer ' + await user.getIdToken();
-  if (body) headers['Content-Type'] = 'application/json';
-  const response = await fetch(api + '?' + query.toString(), { method, headers, body: body && JSON.stringify(body) });
-  if (!response.headers.get('content-type')?.includes('application/json')) {
-    throw new Error('Agenda temporariamente indisponível.');
-  }
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Não foi possível acessar a agenda.');
-  return data;
-}
+
 
 export default function NailStudio({ admin = false, embedded = false }: { admin?: boolean; embedded?: boolean }) {
   const [user, setUser] = useState<User | null>(null);
@@ -118,6 +105,7 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
   const [draftDuration, setDraftDuration] = useState('90');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [reminderConsent, setReminderConsent] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -206,10 +194,11 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
   async function reserve() {
     await run(async () => {
       try {
-        await request(new URLSearchParams(), null, 'POST', { date, service: availability?.service, time, name, phone });
+        await request(new URLSearchParams(), null, 'POST', { date, service: availability?.service, time, name, phone, reminderConsent });
         setReceipt(date.split('-').reverse().join('/') + ' às ' + time);
         setName('');
         setPhone('');
+        setReminderConsent(false);
       } finally {
         setContactStep(false);
         setTime('');
@@ -221,11 +210,12 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
   const content = <>
     {!embedded && <View style={styles.hero}>
       <Text style={styles.brand}>Lua_beauty_studio</Text>
-      <Text accessibilityRole="header" style={styles.title}>{admin ? 'Painel da agenda' : 'Agende suas unhas em gel'}</Text>
+      <Text accessibilityRole="header" style={styles.title}>{admin ? 'Agenda do studio' : 'Agende suas unhas em gel'}</Text>
       <Text style={styles.description}>{admin ? 'Gerencie serviços, horários e atendimentos.' : 'Escolha o serviço e reserve um horário disponível.'}</Text>
     </View>}
     {feedback ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{feedback}</Text> : null}
     {admin && !user ? <View style={styles.card}>
+      <Text style={styles.heading}>Acesso da proprietária</Text>
       <Field label="E-mail" value={email} change={setEmail} />
       <Field label="Senha" value={password} change={setPassword} secret />
       <Button title="Entrar" disabled={saving || !email.trim() || !password} action={() => run(async () => {
@@ -238,12 +228,14 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
       <Text style={styles.description}>{receipt}</Text>
       <Button title="Fazer outro agendamento" action={() => setReceipt('')} />
     </View> : !admin ? <View style={styles.card}>
+      <Text style={styles.step}>{contactStep ? 'Etapa 2 de 2 · Confirmação' : 'Etapa 1 de 2 · Serviço e horário'}</Text>
       {contactStep ? <>
         <Text style={styles.heading}>Seus dados</Text>
         <Text style={styles.summary}>{chosenService?.name} · {formattedDate} às {time}</Text>
         <Field label="Seu nome" value={name} change={setName} />
         <Field label="WhatsApp com DDD" value={phone} change={setPhone} />
-        <Text style={styles.description}>Seu contato será usado para tratar deste atendimento.</Text>
+        <View style={styles.field}><Text style={styles.description}>Posso enviar um lembrete pelo WhatsApp no dia deste atendimento?</Text>
+          <Switch accessibilityLabel="Autorizar lembrete pelo WhatsApp" value={reminderConsent} onValueChange={setReminderConsent} /></View>
         <Button title={saving ? 'Confirmando…' : 'Confirmar reserva'} disabled={saving || !name.trim() || !phone.trim()} action={reserve} />
         <Button title="Alterar data ou horário" secondary disabled={saving} action={() => setContactStep(false)} />
       </> : <>
@@ -299,16 +291,7 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
               border: '1px solid #d6afc0', borderRadius: 10, color: '#321026', background: '#fff', font: 'inherit' }} />
         </label> : <Field label="Data (AAAA-MM-DD)" value={date} change={chooseDate} placeholder="2026-12-01" />}
         {loading ? <Text style={styles.description}>Consultando agenda…</Text> : null}
-        {admin && day && <>
-          <Text style={styles.heading}>Disponibilidade do dia</Text>
-          <Field label="Abertura (HH:MM)" value={start} change={setStart} placeholder="09:00" />
-          <Field label="Encerramento (HH:MM)" value={end} change={setEnd} placeholder="18:00" />
-          <View style={styles.row}>
-            <Button title="Salvar horários" disabled={saving} action={() => saveAdmin({ action: 'hours', start, end }, 'Horários salvos.')} />
-            <Button title="Fechar novas reservas" secondary disabled={saving} action={() =>
-              saveAdmin({ action: 'hours', start: '', end: '' }, 'Data fechada para novas reservas.')} />
-          </View>
-        </>}
+
       </View>
       {admin && day && <>
         <View style={styles.card}>
@@ -317,6 +300,14 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
           {[...(day.bookings || [])].sort((a, b) => a.time.localeCompare(b.time)).map(item => <View key={item.id} style={styles.booking}>
             <Text style={styles.label}>{item.time} · {item.service} · {item.status}</Text>
             <Text style={styles.description}>{item.name} · {item.phone}</Text>
+            <Text style={styles.description}>{item.reminderConsent === true ? 'Lembrete por WhatsApp autorizado' : 'Sem autorização para lembrete'}</Text>
+            {item.reminderConsent === true && item.status === 'confirmado' && date === dateFormat.format(new Date()) &&
+              <Button title="Preparar lembrete no WhatsApp" secondary disabled={saving} action={() => run(async () => {
+                const number = item.phone.length <= 11 ? '55' + item.phone : item.phone;
+                const message = 'Olá, ' + item.name + '! Aqui é do Lua Beauty Studio. Seu atendimento de ' + item.service + ' é hoje às ' + item.time + '. Até lá!';
+                await Linking.openURL('https://wa.me/' + number + '?text=' + encodeURIComponent(message));
+              })} />}
+            {item.notes ? <Text style={styles.description}>Observações: {item.notes}</Text> : null}
             {item.status === 'confirmado' && <View style={styles.row}>
               <Button title="Concluir" secondary disabled={saving} action={() =>
                 saveAdmin({ action: 'status', id: item.id, status: 'concluído' }, 'Atendimento concluído.')} />
@@ -324,6 +315,16 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
                 saveAdmin({ action: 'status', id: item.id, status: 'cancelado' }, 'Reserva cancelada.')} />
             </View>}
           </View>)}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.heading}>Disponibilidade do dia</Text>
+          <Field label="Abertura (HH:MM)" value={start} change={setStart} placeholder="09:00" />
+          <Field label="Encerramento (HH:MM)" value={end} change={setEnd} placeholder="18:00" />
+          <View style={styles.row}>
+            <Button title="Salvar horários" disabled={saving} action={() => saveAdmin({ action: 'hours', start, end }, 'Horários salvos.')} />
+            <Button title="Fechar novas reservas" secondary disabled={saving} action={() =>
+              saveAdmin({ action: 'hours', start: '', end: '' }, 'Data fechada para novas reservas.')} />
+          </View>
         </View>
         <View style={styles.card}>
           <Text style={styles.heading}>Serviços</Text>
@@ -361,6 +362,7 @@ export default function NailStudio({ admin = false, embedded = false }: { admin?
 }
 
 const styles = StyleSheet.create({
+  step: { fontSize: 14, fontWeight: '600', color: '#632e3c', borderBottomWidth: 1, borderBottomColor: '#e4d8d1', paddingBottom: 12 },
   calendar: { gap: 9 },
   calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   calendarMonth: { fontSize: 17, fontWeight: '700', color: '#321c2b', textTransform: 'capitalize' },
@@ -371,12 +373,12 @@ const styles = StyleSheet.create({
   weekday: { fontSize: 13, color: '#66505d', textAlign: 'center' },
   calendarDay: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
   calendarDayText: { fontSize: 16, color: '#796d74' },
-  openDay: { backgroundColor: '#f6e6ee' },
+  openDay: { backgroundColor: '#f3e5e5' },
   openDayText: { color: '#651b39', fontWeight: '700' },
   selectedDay: { backgroundColor: '#651b39' },
   calendarLegend: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   legendDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#f0c5d9', borderWidth: 1, borderColor: '#b47793' },
-  summary: { color: '#651b39', backgroundColor: '#f6e6ee', padding: 12, borderRadius: 10, fontSize: 16 },
+  summary: { color: '#651b39', backgroundColor: '#f3e5e5', padding: 12, borderRadius: 10, fontSize: 16 },
   page: { backgroundColor: '#fff5f7' },
   embedded: { gap: 12, width: '100%' },
   container: { width: '100%', maxWidth: 780, alignSelf: 'center', gap: 18, padding: 20, paddingBottom: 48 },
@@ -385,17 +387,17 @@ const styles = StyleSheet.create({
   title: { fontFamily: 'Georgia', fontSize: 46, color: '#43152f', lineHeight: 50 },
   heading: { color: '#43152f', fontSize: 22, fontWeight: '700' },
   description: { fontSize: 16, color: '#604052', lineHeight: 24 },
-  card: { backgroundColor: '#fff', borderColor: '#efd9e3', borderWidth: 1, borderRadius: 20, padding: 20, gap: 14 },
+  card: { backgroundColor: '#fff', borderColor: '#e4d8d1', borderWidth: 1, borderRadius: 14, padding: 20, gap: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
   field: { gap: 6 },
   label: { fontSize: 16, fontWeight: '600', color: '#43152f' },
   input: { borderWidth: 1, borderColor: '#d6afc0', borderRadius: 10, padding: 12, fontSize: 16, color: '#321026' },
-  button: { backgroundColor: '#812b55', paddingVertical: 11, paddingHorizontal: 16, borderRadius: 10, alignSelf: 'flex-start' },
+  button: { backgroundColor: '#632e3c', paddingVertical: 11, paddingHorizontal: 16, borderRadius: 10, alignSelf: 'flex-start' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  secondary: { backgroundColor: '#f7e5ed' },
+  secondary: { backgroundColor: '#f3eae5' },
   secondaryText: { color: '#6d2148' },
   disabled: { opacity: 0.5 },
   notice: { backgroundColor: '#f4dbe7', color: '#561b3b', borderRadius: 12, padding: 14, fontSize: 16 },
-  booking: { borderTopWidth: 1, borderColor: '#efd9e3', paddingTop: 12, gap: 8 },
+  booking: { borderTopWidth: 1, borderColor: '#e4d8d1', paddingTop: 12, gap: 8 },
   link: { color: '#74264f', fontSize: 16, textDecorationLine: 'underline' },
 });

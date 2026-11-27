@@ -1,0 +1,185 @@
+
+.lua-site{--bg:#fff;--card:#fff;--ink:#111;--mut:#6e6e6e;--pri:#111;--pri2:#cfcfcf;--soft:#f5f5f5;--line:#e5e5e5;--busy:#efefef;--ok:#14935a;--pop:#ff2e7e;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){.lua-site:not([data-theme="light"]){--bg:#0b0b0b;--card:#141414;--ink:#fff;--mut:#9b9b9b;--pri:#fff;--pri2:#444;--soft:#1a1a1a;--line:#2a2a2a;--busy:#1c1c1c;--ok:#4be09a;--pop:#ff4f93;color-scheme:dark}}
+.lua-site[data-theme="dark"]{--bg:#0b0b0b;--card:#141414;--ink:#fff;--mut:#9b9b9b;--pri:#fff;--pri2:#444;--soft:#1a1a1a;--line:#2a2a2a;--busy:#1c1c1c;--ok:#4be09a;--pop:#ff4f93;color-scheme:dark}
+.lua-site *{box-sizing:border-box}.lua-site{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+.lua-site{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+.lua-site .wrap{max-width:900px;margin:0 auto;padding:0 18px}
+.lua-site nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.lua-site nav .wrap{display:flex;justify-content:space-between;align-items:center;height:58px}
+.lua-site .logo{font-family:Georgia,"Times New Roman",serif;font-size:20px;letter-spacing:.5px}
+.lua-site nav a.cta{background:var(--pri);color:#fff;text-decoration:none;padding:9px 18px;border-radius:99px;font-weight:600;font-size:14px}
+.lua-site .hero{text-align:center;padding:64px 0 40px}
+.lua-site .eyebrow{letter-spacing:3px;font-size:12px;color:var(--pri);font-weight:700;text-transform:uppercase}
+.lua-site h1{font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(36px,8vw,58px);line-height:1.1;margin:14px 0}
+.lua-site .hero p{color:var(--mut);max-width:480px;margin:0 auto 26px;font-size:17px}
+.lua-site .btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.lua-site .btn{display:inline-block;padding:14px 26px;border-radius:99px;text-decoration:none;font-weight:700;border:1.5px solid var(--pri);color:var(--pri)}
+.lua-site .btn.f{background:var(--pri);color:#fff}
+.lua-site .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:10px 0 56px}
+.lua-site .fact{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;text-align:center}
+.lua-site .fact b{display:block;font-size:20px;color:var(--pri);font-family:Georgia,serif;font-weight:400}
+.lua-site .fact span{font-size:13px;color:var(--mut)}
+.lua-site section{margin-bottom:56px}
+.lua-site h2{font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:30px;margin:0 0 6px}
+.lua-site .lead{color:var(--mut);margin:0 0 22px}
+.lua-site .how{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.lua-site .how div{padding:20px;border-radius:18px;background:var(--soft)}
+.lua-site .how i{font-style:normal;font-family:Georgia,serif;font-size:30px;color:var(--pri)}
+.lua-site .how b{display:block;margin:4px 0}
+.lua-site .how span{color:var(--mut);font-size:14px}
+.lua-site .svc{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.lua-site .s{text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:18px;padding:18px;color:var(--ink);font:inherit;cursor:pointer}
+.lua-site .s b{display:block;font-size:16px}.lua-site .s span{display:block;color:var(--mut);font-size:13px;margin:4px 0 8px}.lua-site .s em{font-style:normal;font-size:12px;color:var(--pri);font-weight:700}
+.lua-site .s.on{border-color:var(--pri);background:var(--soft)}
+.lua-site .live{display:inline-flex;align-items:center;gap:8px;background:var(--soft);border-radius:99px;padding:7px 14px;font-size:14px;margin-bottom:16px}
+.lua-site .live i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.lua-site .chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.lua-site .chip{font:inherit;font-size:13px;border-radius:12px;padding:10px 6px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;text-align:center}
+.lua-site .chip small{display:block;font-size:11px;color:var(--ok);font-weight:700}
+.lua-site .chip.b{background:var(--busy);color:var(--mut);cursor:not-allowed;border-style:dashed}
+.lua-site .chip.b small{color:var(--mut)}
+.lua-site .chip.on{background:var(--pri);border-color:var(--pri);color:#fff}.lua-site .chip.on small{color:#fff}
+.lua-site .box{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px}
+.lua-site .sum{background:var(--soft);border-radius:14px;padding:14px;margin-bottom:6px;font-size:15px}
+.lua-site label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+.lua-site input{width:100%;font:inherit;padding:13px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink)}
+.lua-site input:focus{outline:2px solid var(--pri2);border-color:var(--pri)}
+.lua-site .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.lua-site .row{grid-template-columns:1fr}}
+.lua-site .go{width:100%;margin-top:20px;border:0;border-radius:16px;padding:17px;background:var(--pri);color:#fff;font:inherit;font-weight:700;font-size:17px;cursor:pointer}
+.lua-site .go:disabled{opacity:.4;cursor:not-allowed}
+.lua-site .ok{display:none;text-align:center}.lua-site .ok pre{white-space:pre-wrap;font:inherit;color:var(--mut);background:var(--soft);padding:14px;border-radius:14px;text-align:left}
+.lua-site .faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:8px}
+.lua-site .faq summary{cursor:pointer;font-weight:600}.lua-site .faq p{color:var(--mut);margin:8px 0 0}
+.lua-site footer{border-top:1px solid var(--line);padding:30px 0 40px;text-align:center;color:var(--mut);font-size:14px}
+.lua-site footer a{color:var(--pri);font-weight:600;text-decoration:none}
+.lua-site{font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif}
+.lua-site .logo{font-family:inherit;font-weight:900;text-transform:uppercase;letter-spacing:-.5px;font-size:18px}
+.lua-site nav{background:var(--bg)}
+.lua-site nav a.cta,.lua-site .btn,.lua-site .go{border-radius:99px}
+.lua-site nav a.cta,.lua-site .btn.f,.lua-site .go,.lua-site .chip.on{color:var(--bg)}.lua-site .chip.on small{color:var(--bg)}
+.lua-site .hero{background:#111;color:#fff;box-shadow:0 0 0 100vmax #111;clip-path:inset(0 -100vmax);padding:96px 0 72px;margin-bottom:40px;text-align:left}
+.lua-site .hero h1{font-family:inherit;font-weight:900;text-transform:uppercase;letter-spacing:-2px;line-height:.95;font-size:clamp(44px,11vw,92px);margin:14px 0 18px}
+.lua-site .hero p{color:#b5b5b5;margin:0 0 30px;max-width:420px}
+.lua-site .hero .eyebrow{color:var(--pop)}
+.lua-site .hero .btns{justify-content:flex-start}
+.lua-site .hero .btn{border-color:#fff;color:#fff}.lua-site .hero .btn.f{background:#fff;color:#111}
+.lua-site .facts{margin-bottom:64px}
+.lua-site .fact{border:0;background:var(--soft);border-radius:14px;text-align:left;padding:22px}
+.lua-site .fact b{font-family:inherit;font-weight:900;text-transform:uppercase;font-size:20px;letter-spacing:-.5px;color:var(--ink)}
+.lua-site h2{font-family:inherit;font-weight:900;text-transform:uppercase;letter-spacing:-1px;font-size:clamp(28px,6vw,40px)}
+.lua-site .lead{font-weight:600;color:var(--ink)}
+.lua-site .how div{background:var(--soft);border-radius:14px}
+.lua-site .how i{font-family:inherit;font-weight:900;color:var(--pop);font-size:34px}
+.lua-site .s,.lua-site .box,.lua-site .faq details{border-radius:14px}
+.lua-site .s.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}.lua-site .s.on span{color:var(--pri2)}
+.lua-site .s em{color:var(--pop)}
+.lua-site .live{background:var(--soft)}.lua-site .live i{background:var(--pop)}
+.lua-site .chip{border-radius:10px;font-weight:600}
+.lua-site .chip.on{background:var(--ink);border-color:var(--ink)}
+.lua-site .sum{background:var(--soft);font-weight:600}
+.lua-site input:focus{outline:2px solid var(--ink);border-color:var(--ink)}
+.lua-site footer a{color:var(--pop)}
+.lua-site .fab{display:none}
+.lua-site{overflow-x:clip;-webkit-tap-highlight-color:transparent}
+.lua-site button,.lua-site a{touch-action:manipulation}
+@media(max-width:700px){
+.lua-site .wrap{padding:0 16px}
+.lua-site nav .wrap{height:54px}
+.lua-site .hero{padding:56px 0 44px;margin-bottom:28px}
+.lua-site .hero h1{font-size:clamp(46px,15vw,70px);letter-spacing:-2.5px}
+.lua-site .hero p{font-size:16px}
+.lua-site .hero .btns{flex-direction:column}
+.lua-site .hero .btn{width:100%;text-align:center;padding:17px;font-size:16px}
+.lua-site .facts{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:44px}
+.lua-site .fact{padding:16px}.lua-site .fact b{font-size:16px}
+.lua-site section{margin-bottom:44px}
+.lua-site .how{grid-template-columns:1fr;gap:10px}
+.lua-site .how div{display:grid;grid-template-columns:44px 1fr;column-gap:8px;padding:16px;align-items:center}
+.lua-site .how i{grid-row:span 2;font-size:36px}
+.lua-site .svc{grid-template-columns:1fr;gap:10px}
+.lua-site .s{padding:16px 18px;min-height:76px}
+.lua-site .chip{min-height:58px;font-size:14px;border-radius:12px}
+.lua-site input{padding:16px;font-size:16px;border-radius:12px}
+.lua-site .box{padding:18px}
+.lua-site .go{padding:19px;font-size:17px}
+.lua-site .faq summary{padding:4px 0}
+.lua-site footer{padding-bottom:110px}
+.lua-site .fab{display:block;position:fixed;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);text-align:center;text-decoration:none;font-weight:800;padding:17px;border-radius:99px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+}
+.lua-site .hero{background:radial-gradient(ellipse 50% 70% at 50% 0%,rgba(255,46,126,.40),transparent),radial-gradient(ellipse 45% 50% at 50% 100%,rgba(255,190,130,.16),transparent),#0d0a0c;box-shadow:0 0 0 100vmax #0d0a0c;text-align:center;padding:84px 0 76px}
+.lua-site .hero::before{content:"";display:block;width:58px;height:58px;border-radius:50%;margin:0 auto 22px;position:relative;left:-8px;box-shadow:16px 6px 0 0 #f6dcc6;filter:drop-shadow(0 0 14px rgba(255,170,140,.45))}
+.lua-site .hero .eyebrow{color:#e9c9b0;letter-spacing:5px;font-size:12px}
+.lua-site .hero h1{font-family:Georgia,"Times New Roman",serif;font-weight:400;text-transform:none;letter-spacing:-1px;line-height:1.02;font-size:clamp(46px,13vw,88px);margin:16px 0 18px}
+.lua-site .hero h1 em{font-style:italic;background:linear-gradient(90deg,#ffd9bf,#ff6fa3);-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.08em}
+.lua-site .hero p{color:#cbbfc5;margin:0 auto 30px;max-width:380px;font-size:17px}
+.lua-site .hero .btns{justify-content:center}
+.lua-site .hero .btn.f{background:linear-gradient(135deg,#ff7aa8,#ff2e7e);color:#fff;border:0;box-shadow:0 10px 30px rgba(255,46,126,.35)}
+.lua-site .hero .btn{border:1.5px solid rgba(255,255,255,.35);color:#fff}
+.lua-site .facts{grid-template-columns:repeat(3,1fr);margin-bottom:56px}
+.lua-site .fact{text-align:center;padding:22px 14px}
+.lua-site .fact b{font-size:15px;letter-spacing:0;text-transform:none;font-family:Georgia,serif;font-weight:400;font-size:19px}
+.lua-site .fact b::before{content:"✦";display:block;color:var(--pop);font-size:14px;margin-bottom:6px}
+@media(max-width:700px){.lua-site .hero{padding:64px 0 52px}.lua-site .hero::before{width:50px;height:50px}.lua-site .facts{grid-template-columns:1fr;gap:8px}.lua-site .fact{padding:16px}.lua-site .fact b::before{display:inline;margin:0 8px 0 0}}
+@media(max-width:700px){}
+.lua-site .cal{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;touch-action:pan-y}
+.lua-site .nav{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:24px;line-height:1;cursor:pointer;padding:0}
+.lua-site .nav:disabled{opacity:.3;cursor:default}
+.lua-site .wk{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:12px;color:var(--mut);font-weight:700;margin-bottom:8px;letter-spacing:1px}
+.lua-site .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.lua-site .e{aspect-ratio:1}
+.lua-site .dy{aspect-ratio:1;border-radius:14px;border:0;background:var(--soft);color:var(--ink);font:inherit;font-weight:700;font-size:16px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0}
+.lua-site .dy .dt{width:5px;height:5px;border-radius:50%;background:var(--pop);display:block}
+.lua-site .dy.off{background:transparent;color:var(--mut);opacity:.35;cursor:default}
+.lua-site .dy.full{background:var(--busy);color:var(--mut);text-decoration:line-through;cursor:not-allowed}
+.lua-site .dy.today{box-shadow:inset 0 0 0 1.5px var(--pop)}
+.lua-site .dy.sel{background:var(--ink);color:var(--bg)}
+.lua-site .grid.inL{animation:inL .28s ease}.lua-site .grid.inR{animation:inR .28s ease}
+@keyframes inL{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+@keyframes inR{from{opacity:0;transform:translateX(-40px)}to{opacity:1;transform:none}}
+.lua-site .calhint{text-align:center;font-size:12px;color:var(--mut);margin:14px 0 0}
+.lua-site .ovl{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+.lua-site .ovl.show{opacity:1;pointer-events:auto}
+.lua-site .sheet{position:fixed;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;background:var(--card);color:var(--ink);border-radius:26px 26px 0 0;padding:12px 20px calc(26px + env(safe-area-inset-bottom,0px));transform:translateY(110%);transition:transform .32s cubic-bezier(.2,.8,.2,1);z-index:21;box-shadow:0 -10px 40px rgba(0,0,0,.3)}
+.lua-site .sheet.show{transform:none}
+.lua-site .grab{width:42px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 16px}
+.lua-site .sheet h3{margin:0;font-size:21px;font-family:Georgia,"Times New Roman",serif;font-weight:400;padding-right:44px}
+.lua-site .shs{margin:2px 0 16px;color:var(--mut);font-size:14px}
+.lua-site .x{position:absolute;top:18px;right:18px;width:36px;height:36px;border-radius:50%;border:0;background:var(--soft);color:var(--ink);font-size:15px;cursor:pointer;padding:0}
+.lua-site .sheet .chips{grid-template-columns:1fr 1fr}
+.lua-site .sheet .chip{min-height:62px;font-size:16px;border-radius:14px}
+.lua-site .cal{background:none;border:0;padding:0}
+.lua-site .deck{position:relative}
+.lua-site .mcard{background:var(--card);border:1px solid var(--line);border-radius:28px;padding:22px 16px 18px;box-shadow:0 14px 36px rgba(0,0,0,.10)}
+.lua-site .mcard.back{position:absolute;left:0;right:0;top:0;bottom:0;opacity:0;transform:scale(.94);pointer-events:none;overflow:hidden}
+.lua-site .mt{font-family:Georgia,"Times New Roman",serif;font-size:27px;text-align:center;margin:0 0 16px}
+.lua-site .navrow{display:flex;align-items:center;justify-content:space-between;margin-top:16px}
+.lua-site .dots{display:flex;gap:8px;align-items:center}
+.lua-site .dots i{display:block;width:8px;height:8px;border-radius:9px;background:var(--line);transition:all .25s}
+.lua-site .dots i.on{width:24px;background:var(--ink)}
+.lua-site .dy[aria-disabled="true"]{cursor:default}
+.lua-site .cal{max-width:420px;margin:0 auto}
+.lua-site .mcard{padding:18px 14px 14px;border-radius:26px}
+.lua-site .mt{font-size:24px;margin:0 0 12px}
+.lua-site .dy{aspect-ratio:1/.9;font-size:15px}
+.lua-site .e{aspect-ratio:1/.9}
+.lua-site .grid{gap:5px}
+.lua-site .wk{margin-bottom:6px}
+
+.lua-site {height:100vh;height:100dvh;overflow:auto;scroll-padding-top:70px}
+.lua-site .hero {margin-top:0}
+.lua-site .cal {margin-top:16px}
+.lua-site .service {display:block;margin:0 0 16px}
+.lua-site .service select {font:inherit;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:10px;max-width:100%}
+.lua-site .sheet {margin:0 auto;top:auto;border:0;max-height:80dvh;overflow:auto;width:100%;transform:none}
+.lua-site .sheet::backdrop {background:#0009}
+.lua-site .retry {border:1px solid var(--line);background:var(--soft);color:var(--ink);padding:10px 16px;border-radius:14px;cursor:pointer}
+.lua-site .ok {display:block}
+.lua-site .feedback {color:var(--ink);font-weight:600}
+.lua-site .box {scroll-margin-bottom:80px}
+.lua-site .fab {pointer-events:auto}
+@media(prefers-reduced-motion:reduce){.lua-site{scroll-behavior:auto}}
+
+.lua-site .reminder-choice { display:flex; align-items:flex-start; gap:10px; padding:14px; background:var(--soft); border-radius:12px; cursor:pointer; font-weight:500 }
+.lua-site .reminder-choice input { flex:none; width:20px; height:20px; margin:0; accent-color:var(--ink) }

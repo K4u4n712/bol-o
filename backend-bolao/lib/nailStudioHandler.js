@@ -66,10 +66,10 @@ function contactKey() {
   return key;
 }
 
-function seal(name, phone) {
+function seal(name, phone, notes, reminderConsent) {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', contactKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(JSON.stringify({ name, phone }), 'utf8'), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify({ name, phone, notes, reminderConsent }), 'utf8'), cipher.final()]);
   return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
 }
 
@@ -91,7 +91,7 @@ module.exports = async (req, res) => {
     const body = req.body || {};
     const date = req.method === 'GET' ? req.query.date : body.date;
     if (mode === 'admin') {
-      const uid = process.env.NAIL_STUDIO_ADMIN_UID || process.env.AIRCLEAN_ADMIN_UID;
+      const uid = process.env.NAIL_STUDIO_ADMIN_UID;
       if (!uid) fail(503, 'Acesso administrativo aguardando configuração.');
       const token = /^Bearer (.+)$/.exec(req.headers.authorization || '');
       if (!token) fail(401, 'Entre com sua conta.');
@@ -139,7 +139,9 @@ module.exports = async (req, res) => {
       if (name.length < 2 || name.length > 80 || !/^\d{10,13}$/.test(phone)) {
         fail(400, 'Informe seu nome e um WhatsApp com DDD.');
       }
-      const contact = seal(name, phone);
+      const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
+      if (notes.length > 500) fail(400, 'Use até 500 caracteres nas observações.');
+      const contact = seal(name, phone, notes, body.reminderConsent === true);
       const id = randomUUID();
       const ref = days.doc(date);
       await db.runTransaction(async tx => {

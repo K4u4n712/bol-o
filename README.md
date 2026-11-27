@@ -55,7 +55,7 @@ A página pública fica em `/agenda-unhas` e o painel em `/agenda-unhas-admin`. 
 
 Antes de publicar:
 
-- O painel usa a conta administrativa da AirClean configurada em `AIRCLEAN_ADMIN_UID`. Para trocar de conta, defina `NAIL_STUDIO_ADMIN_UID` no backend da Vercel com o UID de outro usuário do mesmo projeto Firebase.
+- O painel aceita exclusivamente a conta do Firebase Authentication cujo UID está em `NAIL_STUDIO_ADMIN_UID` no backend da Vercel. Sem esse valor, o acesso administrativo fica bloqueado. Os lembretes são opcionais por reserva. No dia do atendimento, o painel permite preparar a mensagem autorizada para envio manual pelo WhatsApp.
 - No backend da Vercel, defina `NAIL_STUDIO_CONTACT_KEY` com 32 bytes aleatórios em Base64. Gere essa chave localmente em uma sessão privada e guarde uma cópia segura. Ela é necessária para ler os contatos já registrados.
 - Confira nas regras publicadas do Cloud Firestore que os SDKs clientes não têm acesso aos documentos `nailStudio/settings` e `nailStudio/settings/days/{date}`. Uma permissão ampla que também abranja esses caminhos precisa ser restringida. O backend usa o Firebase Admin para acessar os documentos.
 - Se o backend for publicado em outro domínio, configure `EXPO_PUBLIC_NAIL_STUDIO_API` no frontend com a origem dele, sem barra final.
